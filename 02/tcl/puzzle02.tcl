@@ -1,51 +1,8 @@
 # Advent of Code 2019 :: Day 2 :: 1202 Program Alarm
 # https://adventofcode.com/2019/day/2
 
-proc op1 {instruction_pointer_var intcode_var} {
-    upvar $instruction_pointer_var instruction_pointer
-    upvar $intcode_var intcode
-
-    set lhs_index [lindex $intcode [expr {$instruction_pointer + 1}]]
-    set rhs_index [lindex $intcode [expr {$instruction_pointer + 2}]]
-    set dest_index [lindex $intcode [expr {$instruction_pointer + 3}]]
-
-    set lhs [lindex $intcode $lhs_index]
-    set rhs [lindex $intcode $rhs_index]
-
-    set res [expr {$lhs + $rhs}]
-
-    lset intcode $dest_index $res
-
-    incr instruction_pointer 4
-}
-
-proc op2 {instruction_pointer_var intcode_var} {
-    upvar $instruction_pointer_var instruction_pointer
-    upvar $intcode_var intcode
-
-    set lhs_index [lindex $intcode [expr {$instruction_pointer + 1}]]
-    set rhs_index [lindex $intcode [expr {$instruction_pointer + 2}]]
-    set dest_index [lindex $intcode [expr {$instruction_pointer + 3}]]
-
-    set lhs [lindex $intcode $lhs_index]
-    set rhs [lindex $intcode $rhs_index]
-    set res [expr {$lhs * $rhs}]
-
-    lset intcode $dest_index $res
-
-    incr instruction_pointer 4
-}
-
-proc run_intcode {intcode} {
-    set instruction_pointer 0
-
-    set opcode [lindex $intcode $instruction_pointer]
-    while {$opcode != 99} {
-        op${opcode} instruction_pointer intcode
-        set opcode [lindex $intcode $instruction_pointer]
-    }
-    return [lindex $intcode 0]
-}
+# Include Intcode Computer
+source "../../lib/tcl/intcode.tcl"
 
 proc reset_1202 {intcode} {
     lset intcode 1 12
