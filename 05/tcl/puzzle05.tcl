@@ -5,31 +5,16 @@
 source "../../lib/tcl/intcode.tcl"
 
 if {$::argv0 == [info script]} {
-    puts [string repeat "*" 80]
-    puts "For part 1, enter 1 when asked for input."
-    puts "The answer will be the last output."
-    puts "\tBooting intcode computer ....."
-    set filename [lindex $::argv 0]
-    puts "\tLoading code from $filename ...."
-    set filep [open $filename r]
-    set input [string trimright [read $filep]]
-    close $filep
+    set input [string trimright [read stdin]]
     set intcode [split $input ","]
-    puts "\tRunning code from $filename ....."
-    run_intcode $intcode
-    puts "\tDone!"
-    puts [string repeat "*" 80]
-    puts "For part 2, enter 5 when asked for input."
-    puts "The answer will be the last output."
-    puts "\tBooting intcode computer ....."
-    set filename [lindex $::argv 0]
-    puts "\tLoading code from $filename ...."
-    set filep [open $filename r]
-    set input [string trimright [read $filep]]
-    close $filep
-    set intcode [split $input ","]
-    puts "\tRunning code from $filename ....."
-    run_intcode $intcode
-    puts "\tDone!"
 
+    Intcode::init $intcode [list 1]
+    lassign [Intcode::run] intcode0 output
+    puts "The solution to part 1 is [lindex $output end]."
+    if {[lindex $output end] != 9025675} {error "Solution to part 1 should be 9025675!"}
+
+    Intcode::init $intcode [list 5]
+    lassign [Intcode::run] intcode0 output
+    puts "The solution to part 2 is [lindex $output end]."
+    if {[lindex $output end] != 11981754} {error "Solution to part 2 should be 11981754!"}
 }

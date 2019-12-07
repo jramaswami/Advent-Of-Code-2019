@@ -4,24 +4,24 @@
 # Include Intcode Computer
 source "../../lib/tcl/intcode.tcl"
 
-proc reset_1202 {intcode} {
-    lset intcode 1 12
-    lset intcode 2 2
-    return $intcode
-}
-
 proc set_verb_and_noun {intcode noun verb} {
     lset intcode 1 $noun
     lset intcode 2 $verb
     return $intcode
 }
 
+proc solve_part1 {intcode} {
+    Intcode::init [set_verb_and_noun $intcode 12 2] {}
+    lassign [Intcode::run] intcode0 output
+    return [lindex $intcode0 0]
+}
+
 proc solve_part2 {intcode} {
-    # 2682 is too low.
     for {set noun 0} {$noun < 100} {incr noun} {
         for {set verb 0} {$verb < 100} {incr verb} {
-            set intcode0 [set_verb_and_noun $intcode $noun $verb]
-            set result [run_intcode $intcode0]
+            Intcode::init [set_verb_and_noun $intcode $noun $verb] {}
+            lassign [Intcode::run] intcode0 output
+            set result [lindex $intcode0 0]
             if {$result == 19690720} {
                 return [expr {100 * $noun + $verb}]
             }
@@ -32,6 +32,10 @@ proc solve_part2 {intcode} {
 if {$::argv0 == [info script]} {
     set input [string trimright [read stdin]]
     set intcode [split $input ","]
-    puts "The solution to part 1 is [run_intcode [reset_1202 $intcode]]."
-    puts "The solution to part 2 is [solve_part2 $intcode]."
+    set soln1 [solve_part1 $intcode]
+    set soln2 [solve_part2 $intcode]
+    puts "The solution to part 1 is $soln1."
+    if {$soln1 != 2890696} {error "Solution to part 1 should be 2890696!"}
+    puts "The solution to part 2 is $soln2."
+    if {$soln2 != 8226} {error "Solution to part 2 should be 8226!"}
 }
