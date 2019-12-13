@@ -1,206 +1,207 @@
 # Advent of Code 2019 :: Day 11 :: Space Police
 # https://adventofcode.com/2019/day/11
 
-proc memory_get {addr} {
-    if {![info exists ::mnemosyne($addr)]} {
-        memory_set $addr 0
-    }
-    return [set ::mnemosyne($addr)]
-}
+oo::class create IntcodeComputer {
+    variable intcode instruction_pointer memory relative_base
 
-proc memory_set {addr val} {
-    set ::mnemosyne($addr) $val
-}
-
-proc get_value {parameter posn} {
-    set p [string index $parameter [expr {2 - $posn + 1}]]
-    if {$p == 0} {
-        # Position mode
-        set i [memory_get [expr {$::instruction_pointer + $posn}]]
-        set v [memory_get $i]
-        return $v
-    } elseif {$p == 1} {
-        # Immediate mode
-        return [memory_get [expr {$::instruction_pointer + $posn}]]
-    } elseif {$p == 2} {
-        # Relative mode
-        set i [memory_get [expr {$::instruction_pointer + $posn}]]
-        set v [memory_get [expr {$i + $::relative_base}]]
-    } else {
-        error "Invalid parameter $parameter"
-    }
-}
-
-proc get_dest_index {parameter posn} {
-    set p [string index $parameter [expr {2 - $posn + 1}]]
-    if {$p == 0} {
-        # Position mode
-        set i [memory_get [expr {$::instruction_pointer + $posn}]]
-        return $i
-    } elseif {$p == 1} {
-        # Immediate mode
-        error "Write parameter should never be in immediate mode."
-    } elseif {$p == 2} {
-        # Relative mode
-        set i [memory_get [expr {$::instruction_pointer + $posn}]]
-        return [expr {$i + $::relative_base}]
-    } else {
-        error "Invalid parameter $parameter"
-    }
-}
-
-proc op1 {parameter} {
-    set lhs [get_value $parameter 1]
-    set rhs [get_value $parameter 2]
-    set dest_index [get_dest_index $parameter 3]
-    set res [expr {$lhs + $rhs}]
-    memory_set $dest_index $res
-    incr ::instruction_pointer 4
-}
-
-proc op2 {parameter} {
-    set lhs [get_value $parameter 1]
-    set rhs [get_value $parameter 2]
-    set dest_index [get_dest_index $parameter 3]
-    set res [expr {$lhs * $rhs}]
-    memory_set $dest_index $res
-    incr ::instruction_pointer 4
-}
-
-proc op3 {parameter} {
-    if {$::input_pointer >= [llength $::input_queue]} {
-        set ::status blocking
-        return
-    }
-    set input [lindex $::input_queue $::input_pointer]
-    incr ::input_pointer
-
-    set dest_index [get_dest_index $parameter 1]
-    memory_set $dest_index $input
-    incr ::instruction_pointer 2
-}
-
-# Opcode 4 outputs the value of its only parameter. For example, the
-# instruction 4,50 would output the value at address 50.
-proc op4 {parameter} {
-    set value [get_value $parameter 1]
-    lappend ::output_queue $value
-    incr ::instruction_pointer 2
-}
-
-# Opcode 5 is jump-if-true: if the first parameter is non-zero, it sets the
-# instruction pointer to the value from the second parameter. Otherwise, it
-# does nothing.
-proc op5  {parameter} {
-    set lhs [get_value $parameter 1]
-    if {$lhs != 0} {
-        set rhs [get_value $parameter 2]
-        set ::instruction_pointer $rhs
-    } else {
-        incr ::instruction_pointer 3
-    }
-}
-
-# Opcode 6 is jump-if-false: if the first parameter is zero, it sets the
-# instruction pointer to the value from the second parameter. Otherwise, it
-# does nothing.
-proc op6 {parameter} {
-    set lhs [get_value $parameter 1]
-    if {$lhs == 0} {
-        set rhs [get_value $parameter 2]
-        set ::instruction_pointer $rhs
-    } else {
-        incr ::instruction_pointer 3
-    }
-}
-
-# Opcode 7 is less than: if the first parameter is less than the second
-# parameter, it stores 1 in the position given by the third parameter.
-# Otherwise, it stores 0.
-proc op7 {parameter} {
-    set lhs [get_value $parameter 1]
-    set rhs [get_value $parameter 2]
-    set dest_index [get_dest_index $parameter 3]
-    if {$lhs < $rhs} {
-        memory_set $dest_index 1
-    } else {
-        memory_set $dest_index 0
-    }
-    incr ::instruction_pointer 4
-}
-
-# Opcode 8 is equals: if the first parameter is equal to the second parameter,
-# it stores 1 in the position given by the third parameter. Otherwise, it
-# stores 0.
-proc op8 {parameter} {
-    set lhs [get_value $parameter 1]
-    set rhs [get_value $parameter 2]
-    set dest_index [get_dest_index $parameter 3]
-    if {$lhs == $rhs} {
-        memory_set $dest_index 1
-    } else {
-        memory_set $dest_index 0
-    }
-    incr ::instruction_pointer 4
-}
-
-# Opcode 9 adjusts the relative base by the value of its only parameter. The
-# relative base increases (or decreases, if the value is negative) by the value
-# of the parameter
-proc op9 {parameter} {
-    set i [get_value $parameter 1]
-    incr ::relative_base $i
-    incr ::instruction_pointer 2
-}
-
-proc init {intcode} {
-    # Erase any previous memory
-    array unset ::mnemosyne
-    # Copy intcode into memory
-    for {set i 0} {$i < [llength $intcode]} {incr i} {
-        memory_set $i [lindex $intcode $i]
-    }
-    # Set global vars
-    set ::instruction_pointer 0
-    set ::input_queue {}
-    set ::input_pointer 0
-    set ::output_queue {}
-    set ::relative_base 0
-    set ::status ok
-    set ::code_limit [llength $intcode]
-}
-
-proc run {} {
-    # Run program
-    set token [memory_get $::instruction_pointer]
-    set opcode [expr {$token % 100}]
-    set parameter [format %03d [expr {int($token / 100)}]]
-    # puts "$opcode $parameter @ $::instruction_pointer"
-    while {$opcode != 99} {
-        set ::status ok
-        op${opcode} $parameter
-        if {$::status == "blocking"} {
-            return
+    constructor {intcode0} {
+        my variable intcode memory relative_base
+        set intcode $intcode0
+        set memory [dict create]
+        for {set i 0} {$i < [llength $intcode0]} {incr i} {
+            my memory_set $i [lindex $intcode0 $i]
         }
-        if {$::instruction_pointer >= $::code_limit} {
-            error "We've wandered off the reservation ..."
+        set relative_base 0
+    }
+
+    method memory_get {addr} {
+        my variable memory
+        if {![dict exists $memory $addr]} {
+            my memory_set $addr 0
         }
-        set token [memory_get $::instruction_pointer]
+        return [dict get $memory $addr]
+    }
+
+    method memory_set {addr val} {
+        my variable memory
+        dict set memory $addr $val
+    }
+
+    method get_value {parameter posn} {
+        my variable instruction_pointer intcode relative_base
+        set p [string index $parameter [expr {2 - $posn + 1}]]
+        switch $p {
+            0 {
+                # Postion mode
+                set i [my memory_get [expr {$instruction_pointer + $posn}]]
+                set v [my memory_get $i]
+                return $v
+            }
+            1 {
+                # Immediate mode
+                return [my memory_get [expr {$instruction_pointer + $posn}]]
+            }
+            2 {
+                # Relative mode
+                set i [my memory_get [expr {$instruction_pointer + $posn}]]
+                set v [my memory_get [expr {$i + $relative_base}]]
+                return $v
+            }
+            default {
+                set s "Invalid parameter $parameter: $p -- [my memory_get $instruction_pointer] @ $instruction_pointer"
+                error $s
+            }
+        }
+    }
+
+    method get_dest_index {parameter posn} {
+        my variable instruction_pointer relative_base
+        set p [string index $parameter [expr {2 - $posn + 1}]]
+        switch $p {
+            0 {
+                # Position mode
+                set i [my memory_get [expr {$instruction_pointer + $posn}]]
+                return $i
+            }
+            1 {
+                error "Write parameter should never be in immediate mode."
+            }
+            2 {
+                # Relative mode
+                set i [my memory_get [expr {$instruction_pointer + $posn}]]
+                return [expr {$i + $relative_base}]
+            }
+            default {
+                error "Invalid parameter $parameter"
+            }
+        }
+    }
+
+    method op1 {parameter} {
+        my variable instruction_pointer
+        set lhs [my get_value $parameter 1]
+        set rhs [my get_value $parameter 2]
+        set dest_index [my get_dest_index $parameter 3]
+        set res [expr {$lhs + $rhs}]
+        my memory_set $dest_index $res
+        incr instruction_pointer 4
+    }
+
+	method op2 {parameter} {
+        my variable instruction_pointer
+        set lhs [my get_value $parameter 1]
+        set rhs [my get_value $parameter 2]
+        set dest_index [my get_dest_index $parameter 3]
+		set res [expr {$lhs * $rhs}]
+		my memory_set $dest_index $res
+		incr instruction_pointer 4
+	}
+
+    method op3 {parameter} {
+        my variable instruction_poiner intcode
+        set value [yield]
+        set dest_index [my get_dest_index $parameter 1]
+        my memory_set $dest_index $value
+        incr instruction_pointer 2
+    }
+
+    # Opcode 4 outputs the value of its only parameter. For example, the
+    # instruction 4,50 would output the value at address 50.
+    method op4 {parameter} {
+        my variable instruction_pointer
+        set value [my get_value $parameter 1]
+        set ignore [yield $value]
+        incr instruction_pointer 2
+    }
+    
+    # Opcode 5 is jump-if-true: if the first parameter is non-zero, it sets the
+    # instruction pointer to the value from the second parameter. Otherwise, it
+    # does nothing.
+    method op5  {parameter} {
+        my variable instruction_pointer
+        set lhs [my get_value $parameter 1]
+        if {$lhs != 0} {
+            set rhs [my get_value $parameter 2]
+            set instruction_pointer $rhs
+        } else {
+            incr instruction_pointer 3
+        }
+    }
+
+    # Opcode 6 is jump-if-false: if the first parameter is zero, it sets the
+    # instruction pointer to the value from the second parameter. Otherwise, it
+    # does nothing.
+    method op6 {parameter} {
+        my variable instruction_pointer
+        set lhs [my get_value $parameter 1]
+        if {$lhs == 0} {
+            set rhs [my get_value $parameter 2]
+            set instruction_pointer $rhs
+        } else {
+            incr instruction_pointer 3
+        }
+    }
+
+    # Opcode 7 is less than: if the first parameter is less than the second
+    # parameter, it stores 1 in the position given by the third parameter.
+    # Otherwise, it stores 0.
+    method op7 {parameter} {
+        my variable instruction_pointer
+        set lhs [my get_value $parameter 1]
+        set rhs [my get_value $parameter 2]
+        set dest_index [my get_dest_index $parameter 3]
+        if {$lhs < $rhs} {
+            my memory_set $dest_index 1
+        } else {
+            my memory_set $dest_index 0
+        }
+        incr instruction_pointer 4
+    }
+
+    # Opcode 8 is equals: if the first parameter is equal to the second
+    # parameter, it stores 1 in the position given by the third parameter.
+    # Otherwise, it stores 0.
+    method op8 {parameter} {
+        my variable instruction_pointer intcode
+        set lhs [my get_value $parameter 1]
+        set rhs [my get_value $parameter 2]
+        set dest_index [my get_dest_index $parameter 3]
+        if {$lhs == $rhs} {
+            my memory_set $dest_index 1
+        } else {
+            my memory_set $dest_index 0
+        }
+        incr instruction_pointer 4
+    }
+
+    # Opcode 9 adjusts the relative base by the value of its only parameter.
+    # The relative base increases (or decreases, if the value is negative) by
+    # the value of the parameter.
+    method op9 {parameter} {
+        my variable instruction_pointer relative_base
+        set i [my get_value $parameter 1]
+        incr relative_base $i
+        incr instruction_pointer 2
+    }
+
+    method run {} {
+        my variable instruction_pointer intcode
+        set instruction_pointer 0
+        set token [lindex $intcode $instruction_pointer]
         set opcode [expr {$token % 100}]
         set parameter [format %03d [expr {int($token / 100)}]]
-        # puts "$opcode $parameter @ $::instruction_pointer"
-    }
-    set ::status "halted"
+        while {$opcode != 99} {
+			my op${opcode} $parameter
+            set token [lindex $intcode $instruction_pointer]
+            set opcode [expr {$token % 100}]
+            set parameter [format %03d [expr {int($token / 100)}]]
+		}
+	}
 }
 
-proc read_output_queue {} {
-    set out $::output_queue
-    set ::output_queue {}
-    return $out
-}
-
-proc enqueue_input {value} {
-    lappend ::input_queue $value
+proc run_computer {intcode} {
+    set computer [IntcodeComputer new $intcode]
+    $computer run
 }
 
 # Returns new direction based on current direction and turn
@@ -268,25 +269,28 @@ proc solve {intcode {part_2 0}} {
         set ::panels($posn) 1
     }
     set dirn U
-    init $intcode
-    while {$::status != "halted"} {
-        run
-        if {$::status == "blocking"} {
-            set output [read_output_queue]
-            if {[llength $output] > 0} {
-                lassign $output paint_color turn_code
-                paint_panel $posn $paint_color
-                # puts "painted panel $posn $paint_color"
-                # puts "getting new dirn from $dirn and $turn_code"
-                set dirn [turn_robot $dirn $turn_code]
-                # puts "turned to $dirn"
-                set posn [move $dirn $posn]
-                # puts "moved $dirn to $posn"
-            }
-            enqueue_input [get_panel_color $posn]
-        }
-    }
 
+    # Start computer, which will run until it needs input.
+    coroutine computer run_computer $intcode
+    while {[llength [info commands computer]] > 0} {
+        # Give panel color as input and get paint color as output.
+        set current_panel_color [get_panel_color $posn]
+        set paint_color [computer $current_panel_color]
+
+        # Run computer again until it gives the turn code as output.
+        set turn_code [computer]
+
+        # Then run the computer again until it needs input.
+        computer
+
+        # Paint panel
+        paint_panel $posn $paint_color
+        # Turn robot
+        set dirn [turn_robot $dirn $turn_code]
+        # Move robot
+        set posn [move $dirn $posn]
+    }
+        
     if {$part_2} {
         set min_x 999999
         set min_y 999999
