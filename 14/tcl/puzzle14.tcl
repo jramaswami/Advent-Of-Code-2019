@@ -1,12 +1,16 @@
 # Advent of Code 2019 :: Day 14 :: Space Stoichiometry
 # https://adventofcode.com/2019/day/14
 
-proc solve {input} {
-    # Parse input
+# Returns dictionary of recipes, quantities, and the order of reductions.
+proc parse_input {input} {
     set lines [split $input "\n"]
+    # Dictionary of the quantities produced by the formula/recipe
     set quantities [dict create]
+    # Dictionary of recipes
     set recipes [dict create]
+    # Graph used to determine the order of reductions
     set graph [dict create]
+    
     foreach line $lines {
         set i [string first "=" $line]
         set lhs [string range $line 0 [expr {$i - 2}]]
@@ -24,6 +28,7 @@ proc solve {input} {
         dict set recipes $chem $recipe
     }
 
+    # BFS to determine the maximum distance from ORE to the given chemical
     set dists [dict create]
     dict set dists "ORE" 1
     set queue [list "ORE"]
@@ -47,52 +52,96 @@ proc solve {input} {
         set queue $new_queue
         set new_queue {}
     }
-    puts "dists immediate $dists"
+
+    # Take the dictionary of distances and turn it into a list of pairs
     set dists0 {}
     dict for {node dist} $dists {
         lappend dists0 [list $node $dist]
     }
+
+    # Sort the list of chemicals by distance to ORE (descending); this is the 
+    # order of reductions.
     set reductions [lmap x [lsort -index 1 -integer -decreasing $dists0] {lindex $x 0}]
 
-    # Repeatedly reduce the formula until it cannot be further reduced
-    set formula [dict get $recipes FUEL]
-    foreach reduction [lrange $reductions 1 end-1] {
-        puts "Reducing $reduction"
-        puts "formula $formula"
+    return [list $recipes $quantities $reductions]
+}
+
+# Returns the amount of ore required to produce the given formula, which
+# should be {FUEL n} where n is an integer greater than 0.
+proc compute_ore_required {formula recipes quantities reductions} {
+
+    # Loop over the reductions; remove the chemical under reduction from
+    # the formula and add to the formula the chemicals required for the
+    # chemical of reduction.
+    foreach reduction [lrange $reductions 0 end-1] {
         set needed [dict get $formula $reduction]
         dict unset formula $reduction
         set recipe [dict get $recipes $reduction]
         if {[dict exist $recipe "ORE"]} {
-            puts "$reduction is leaf"
             dict incr formula $reduction $needed
         } else {
             set produced [dict get $quantities $reduction]
             set lots [expr {int(ceil(double($needed) / double($produced)))}]
-            puts "$reduction $needed $produced -> $lots: $recipe"
             dict for {pre pre_q} $recipe {
-                puts "enqueue $pre $pre_q -> [expr {$lots * $pre_q}]"
                 dict incr formula $pre [expr {$lots * $pre_q}]
             }
         }
     }
 
-    # Compute cost in ore
-    puts "Computing ..."
+    # Compute cost in ore for all the base chemicals left in the formula.
     set ore 0
     dict for {chem needed} $formula {
         set produced [dict get $quantities $chem]
         set lots [expr {int(ceil(double($needed) / double($produced)))}]
         set cost [lindex [dict get $recipes $chem] 1]
-        puts "$chem $qty $lots $cost [expr {$cost * $lots}]"
         incr ore [expr {$cost * $lots}]
     }
     return $ore
 }
 
+proc solve {input} {
+    # Parse input
+    lassign [parse_input $input] recipes quantities reductions
+
+    # Reduce formula to find out how much ore is required for 1 unit of fuel.
+    set formula [list FUEL 1]
+    set soln1 [compute_ore_required $formula $recipes $quantities $reductions]
+
+    # Binary search for the maximum amount of fuel that can be produced using
+    # 1000000000000 units of ore or less.
+    set soln2 1
+    set low 2
+    set high 100000000
+    set limit 1000000000000
+    while {$low <= $high} {
+        set mid [expr {int(($low + $high) / 2)}]
+        set ore [compute_ore_required [list FUEL $mid] $recipes $quantities $reductions]
+        if {$ore < $limit} {
+            set low [expr {$mid + 1}]
+        } elseif {$ore > $limit} {
+            set high [expr {$mid - 1}]
+        } else {
+            break
+        }
+    }
+    
+    # Binary search may return the amount of fuel produced by just more than
+    # 1000000000000, if so, reduce the fuel by one unit.
+    set ore [compute_ore_required [list FUEL $mid] $recipes $quantities $reductions]
+    if {$ore > $limit} {
+        incr mid -1
+    }
+    return [list $soln1 $mid]
+}
+
 proc main {} {
     set input [string trim [read stdin]]
-    set soln1 [solve $input]
+    lassign [solve $input] soln1 soln2
     puts "The solution to part 1 is $soln1."
+    puts "The solution to part 2 is $soln2."
+
+    if {$soln1 != 136771} {error "The solution to part 1 should be 136771."}
+    if {$soln2 != 8193614} {error "The solution to part 1 should be 8193614."}
 }
 
 if {$::argv0 == [info script]} {
