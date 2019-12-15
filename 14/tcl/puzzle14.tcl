@@ -1,64 +1,95 @@
 # Advent of Code 2019 :: Day 14 :: Space Stoichiometry
 # https://adventofcode.com/2019/day/14
+
 proc solve {input} {
+    # Parse input
     set lines [split $input "\n"]
-    set quantity_made [dict create]
+    set quantities [dict create]
     set recipes [dict create]
+    set graph [dict create]
     foreach line $lines {
         set i [string first "=" $line]
         set lhs [string range $line 0 [expr {$i - 2}]]
         set rhs [string range $line [expr {$i + 3}] end]
 
         lassign [lmap x [split $rhs " "] {string trim $x}] qty chem
-        dict set quantity_made $chem $qty
-        dict set recipes $chem [lmap x [split $lhs ","] {string trim $x}]
+        dict set quantities $chem $qty
+        
+        set recipe [dict create]
+        foreach item [lmap x [split $lhs ","] {string trim $x}] {
+            lassign $item q c
+            dict lappend graph $c $chem
+            dict set recipe $c $q
+        }
+        dict set recipes $chem $recipe
     }
-    puts "$recipes"
-    puts "$quantity_made"
 
-    set queue [dict get $recipes FUEL]
-    set final [dict create]
+    puts "graph $graph"
+    set dists [dict create]
+    set d 1
+    set queue [dict get $graph "ORE"]
     set new_queue {}
     while {[llength $queue] > 0} {
-        puts "Q: $queue"
-        foreach item $queue {
-            lassign $item quantity chemical
-            set recipe [dict get $recipes $chemical]
-            if {[llength $recipe] == 1 && [lindex [lindex $recipe 0] 1] == "ORE"} {
-                puts "$chemical is a leaf node."
-                dict incr final $chemical $quantity
-            } else {
-                puts "$chemical is not a leaf node."
-                puts "recipe $recipe produces [dict get $quantity_made $chemical] $chemical"
-                set made [dict get $quantity_made $chemical]
-                set lots [expr {int(ceil(double($quantity) / double($made)))}]
-                puts "$quantity of $chemical is needed, so $lots lots are required."
-                foreach precursor $recipe {
-                    puts "precursor $precursor"
-                    lassign $precursor q c
-                    set item0 [list [expr {$q * $lots}] $c]
-                    puts "placing $item0 on queue"
-                    lappend new_queue $item0
-                }
+        foreach node $queue {
+            if {$node == "FUEL"} {
+                puts "FUEL $d"
+                continue
+            }
+            dict set dists $node $d
+            foreach neighbor [dict get $graph $node] {
+                lappend new_queue $neighbor
             }
         }
+        incr d
         set queue $new_queue
         set new_queue {}
     }
-
-    puts "final $final"
-    set total_ore_required 0
-    dict for {chemical quantity} $final {
-        set recipe [dict get $recipes $chemical]
-        set ore_required [lindex [lindex $recipe 0] 0]
-        set made [dict get $quantity_made $chemical]
-        set lots [expr {int(ceil(double($quantity) / double($made)))}]
-        puts "$ore_required ore to make $made $chemical"
-        puts "$quantity $chemical is needed, this is $lots lots"
-        puts "so [expr {$lots * $ore_required}] ore is required"
-        incr total_ore_required [expr {$lots * $ore_required}]
+    set dists0 {}
+    dict for {node dist} $dists {
+        lappend dists0 [list $node $dist]
     }
-    return $total_ore_required
+    set reductions [lmap x [lsort -index 1 -integer -decreasing $dists0] {lindex $x 0}]
+    reductions "dists $dists"
+
+    # Repeatedly reduce the formula until it cannot be further reduced
+    set formula [dict get $recipes FUEL]
+    set formula0 [dict create]
+    set reduced 1
+    while {$reduced} {
+        set reduced 0
+        puts "formula $formula"
+        dict for {key needed} $formula {
+            set recipe [dict get $recipes $key]
+            if {[dict exist $recipe "ORE"]} {
+                puts "$key is leaf"
+                dict incr formula0 $key $needed
+            } else {
+                set reduced 1
+                set produced [dict get $quantities $key]
+                set lots [expr {int(ceil(double($needed) / double($produced)))}]
+                puts "$key $needed $produced -> $lots: $recipe"
+                dict for {pre pre_q} $recipe {
+                    puts "enqueue $pre $pre_q -> [expr {$lots * $pre_q}]"
+                    dict incr formula0 $pre [expr {$lots * $pre_q}]
+                }
+            }
+        }
+        puts "formula0 $formula0"
+        set formula $formula0
+        set formula0 [dict create]
+    }
+
+    # Compute cost in ore
+    puts "Computing ..."
+    set ore 0
+    dict for {chem needed} $formula {
+        set produced [dict get $quantities $chem]
+        set lots [expr {int(ceil(double($needed) / double($produced)))}]
+        set cost [lindex [dict get $recipes $chem] 1]
+        puts "$chem $qty $lots $cost [expr {$cost * $lots}]"
+        incr ore [expr {$cost * $lots}]
+    }
+    return $ore
 }
 
 proc main {} {
