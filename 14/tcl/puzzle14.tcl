@@ -24,19 +24,22 @@ proc solve {input} {
         dict set recipes $chem $recipe
     }
 
-    puts "graph $graph"
     set dists [dict create]
-    set d 1
-    set queue [dict get $graph "ORE"]
+    dict set dists "ORE" 1
+    set queue [list "ORE"]
     set new_queue {}
     while {[llength $queue] > 0} {
         foreach node $queue {
             if {$node == "FUEL"} {
-                puts "FUEL $d"
                 continue
             }
-            dict set dists $node $d
+            set node_d [dict get $dists $node]
             foreach neighbor [dict get $graph $node] {
+                if {![dict exists $dists $neighbor]} {
+                    dict set dists $neighbor 0
+                }
+                set neighbor_d [dict get $dists $neighbor]
+                dict set dists $neighbor [::tcl::mathfunc::max [expr {$node_d + 1}] $neighbor_d]
                 lappend new_queue $neighbor
             }
         }
@@ -44,39 +47,33 @@ proc solve {input} {
         set queue $new_queue
         set new_queue {}
     }
+    puts "dists immediate $dists"
     set dists0 {}
     dict for {node dist} $dists {
         lappend dists0 [list $node $dist]
     }
     set reductions [lmap x [lsort -index 1 -integer -decreasing $dists0] {lindex $x 0}]
-    reductions "dists $dists"
 
     # Repeatedly reduce the formula until it cannot be further reduced
     set formula [dict get $recipes FUEL]
-    set formula0 [dict create]
-    set reduced 1
-    while {$reduced} {
-        set reduced 0
+    foreach reduction [lrange $reductions 1 end-1] {
+        puts "Reducing $reduction"
         puts "formula $formula"
-        dict for {key needed} $formula {
-            set recipe [dict get $recipes $key]
-            if {[dict exist $recipe "ORE"]} {
-                puts "$key is leaf"
-                dict incr formula0 $key $needed
-            } else {
-                set reduced 1
-                set produced [dict get $quantities $key]
-                set lots [expr {int(ceil(double($needed) / double($produced)))}]
-                puts "$key $needed $produced -> $lots: $recipe"
-                dict for {pre pre_q} $recipe {
-                    puts "enqueue $pre $pre_q -> [expr {$lots * $pre_q}]"
-                    dict incr formula0 $pre [expr {$lots * $pre_q}]
-                }
+        set needed [dict get $formula $reduction]
+        dict unset formula $reduction
+        set recipe [dict get $recipes $reduction]
+        if {[dict exist $recipe "ORE"]} {
+            puts "$reduction is leaf"
+            dict incr formula $reduction $needed
+        } else {
+            set produced [dict get $quantities $reduction]
+            set lots [expr {int(ceil(double($needed) / double($produced)))}]
+            puts "$reduction $needed $produced -> $lots: $recipe"
+            dict for {pre pre_q} $recipe {
+                puts "enqueue $pre $pre_q -> [expr {$lots * $pre_q}]"
+                dict incr formula $pre [expr {$lots * $pre_q}]
             }
         }
-        puts "formula0 $formula0"
-        set formula $formula0
-        set formula0 [dict create]
     }
 
     # Compute cost in ore
