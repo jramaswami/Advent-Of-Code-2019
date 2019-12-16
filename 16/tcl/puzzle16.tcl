@@ -23,20 +23,39 @@ proc run_pattern {fft pattern index} {
     return $t
 }
 
+proc ladd {l} {::tcl::mathop::+ {*}$l}
+
 proc phase {input_signal} {
     set pattern [list 0 1 0 -1]
     set fft [split $input_signal {}]
     set fft0 {}
-    for {set i 1} {$i <= [llength $fft]} {incr i} {
-        set k [expr {abs([run_pattern $fft $pattern $i]) % 10}]
-        lappend fft0 $k
+    set start 0
+    set len 1
+    while {$start < [llength $fft]} {
+        set st 0
+        set sn 1
+        set step [expr {$len + 1}]
+        set b $start
+        while {$b < [llength $fft]} {
+            set e [expr {$b + $len - 1}]
+            set sublist [lrange $fft $b $e]
+            set sublist0 [lmap x $sublist {expr {$sn * $x}}]
+            incr st [ladd $sublist0]
+            set sn [expr {-1 * $sn}]
+            set b [expr {$e + $step}]
+        }
+        set t [expr {abs($st) % 10}]
+        lappend fft0 $t
+
+        incr len
+        incr start
     }
     return [join $fft0 ""]
 }
 
 proc solve {input_signal phases} {
     for {set p 1} {$p <= $phases} {incr p} {
-        puts "p $p"
+        puts "$p"
         set input_signal [phase $input_signal]
     }
     return $input_signal
@@ -47,6 +66,8 @@ proc main {} {
     set input [string trim [read stdin]]
     set soln1 [string range [solve $input 100] 0 7]
     puts "The solution to part 1 is $soln1."
+    set input [string repeat $input 10000]
+    puts [solve $input 100]
 
     if {$soln1 != 59281788} {error "The solution to part 1 should be 59281788."}
 }
