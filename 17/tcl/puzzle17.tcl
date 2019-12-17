@@ -412,87 +412,211 @@ proc find_path {map} {
     while {$turn != "None"} {
         lassign [move $posn $dirn map] posn steps
         # puts "robot now in $posn after $turn $steps ($dirn)"
-        set path [concat $path "$turn $steps"]
+        set path [concat $path "$turn$steps"]
         # print_map $map
         lassign [get_next_turn $posn $dirn $map] turn dirn
     }
     return $path
 }
 
+# Turn a path into a stream of ascii.
+proc ascii_encode_path {path} {
+    set encoded {}
+    foreach p $path {
+        set dirn [string range $p 0 0]
+        set steps [string range $p 1 end]
+        lappend encoded [scan $dirn %c]
+        lappend encoded 44
+        if {$steps != ""} {
+            foreach digit [split $steps {}] {
+                lappend encoded [scan $digit %c]
+            }
+            lappend encoded 44
+        }
+    }
+    lset encoded end 10
+    return $encoded
+}
+
+proc find_pair {lst needle} {
+    for {set i 0} {$i < [expr {[llength $lst] - 1}]} {incr i} {
+        set pair [lrange $lst $i [expr {$i + 1}]]
+        if {$pair == $needle} {
+            return $i
+        }
+    }
+    return -1
+}
+
+proc byte_pair_encode {path} {
+    set symbols {a b c d e f g h i j k l m n o p q r s t u v w x y z}
+    set decoder [dict create]
+    set symbol_index 0
+
+    set encoded $path
+
+    # Run the byte pair replacement
+    while {1} {
+
+        # Stop looking when the encoding is all symbols
+        set all_symbols 1
+         foreach e $encoded {
+             if {[lsearch $symbols $e] < 0} {
+                 set all_symbols 0
+                 break
+             }
+         }
+         if {$all_symbols} {
+             break
+         }
+
+        # Find the most frequently ocurring pair of symbols.
+        set freqs [dict create]
+        for {set i 0} {$i < [expr {[llength $encoded] - 1}]} {incr i} {
+            set pair [lrange $encoded $i [expr {$i + 1}]]
+            dict incr freqs $pair
+        }
+        set max_freq 0
+        set max_pair ""
+        dict for {pair freq} $freqs {
+            if {$freq >= $max_freq} {
+                set max_freq $freq
+                set max_pair $pair
+            }
+        }
+        # Stop if there aren't any symbols with freq 
+        if {$max_freq == 0} {
+            break
+        }
+
+        # Replace the most frequently ocurring pair with a new symbol.
+        set symbol [lindex $symbols $symbol_index]
+        dict set decoder [lindex $symbols $symbol_index] $max_pair
+        incr symbol_index
+        set index [find_pair $encoded $max_pair]
+        while {$index >= 0} {
+            set encoded [lreplace $encoded $index [expr {$index + 1}] $symbol]
+            set index [find_pair $encoded $max_pair]
+        }
+    }
+
+    # Set up a way to substite in A,B,C for the symbols we ended up with
+    set encoded_symbols [lsort -unique $encoded]
+    set substitute_symbols [dict create]
+    foreach symbol $encoded_symbols substitute {A B C} {
+        dict set substitute_symbols $symbol $substitute
+    }
+ 
+    # Decode each symbol
+    set decoded_symbols [dict create]
+    foreach item $encoded_symbols {
+        set name [dict get $substitute_symbols $item]
+        set replacement_made 1
+        while {$replacement_made} {
+            set replacement_made 0
+            dict for {symbol replacement} $decoder {
+                set index [lsearch $item $symbol]
+                if {$index >= 0} {
+                    set lhs [lrange $item 0 [expr {$index - 1}]]
+                    set rhs [lrange $item [expr {$index + 1}] end]
+                    set item [concat $lhs $replacement $rhs]
+                    set replacement_made 1
+                }
+            }
+        }
+        dict set decoded_symbols $name $item
+    }
+    set encoded [lmap x $encoded {dict get $substitute_symbols $x}]
+    return [list $encoded $decoded_symbols]
+}
+
+
 proc solve_part2 {intcode map} {
     # Find path on scaffolding
     set path [find_path $map]
-    # puts $path
 
-    # Break path up into subroutines
-    set A {R 6 L 8 L 10 R 6}
-    set B {R 6 L 6 L 10}
-    set C {L 8 L 6 L 10 L 6}
-    set M {B C B C A B C A B A}
+    # Break path up into subroutines using byte pair encoding.
+    lassign [byte_pair_encode $path] main subroutines
 
-    # Make sure the subroutines match the path
-    set path0 [concat $B $C $B $C $A $B $C $A $B $A]
+    # Place subroutine data in variables A,B,C
+    dict for {name data} $subroutines {
+        set $name $data
+    }
+
+    # Build path from the subroutines and make sure the subroutines 
+    # match the path we found earlier.
+    set path0 {}
+    foreach sub $main {
+        set path0 [concat $path0 [set $sub]]
+    }
     if {$path0 != $path} {
         error "This is not the way!"
     }
-    set sub_a [lmap x [concat [split [join $A ,] {}] [list "\n"]] {scan $x %c}]
-    set sub_b [lmap x [concat [split [join $B ,] {}] [list "\n"]] {scan $x %c}]
-    set sub_c [lmap x [concat [split [join $C ,] {}] [list "\n"]] {scan $x %c}]
-    set sub_main [lmap x [concat [split [join $M ,] {}] [list "\n"]] {scan $x %c}]
+
+    set sub_a [ascii_encode_path $A]
+    set sub_b [ascii_encode_path $B]
+    set sub_c [ascii_encode_path $C]
+    set sub_main [ascii_encode_path $main]
     set continuous_feed [lmap x [split "n\n" {}] {scan $x %c}]
 
     lset intcode 0 2
     # Run until computer needs input, it will print the map again
     set c [coroutine compute run_computer $intcode]
     while {$c != "?" && $c != ""} {
-        # puts -nonewline [format %c $c]
+        puts -nonewline [format %c $c]
         set c [compute]
     }
-    # puts $c
+    puts $c
     
     # Input the main subroutine
+    puts "Entering main:\n$main\n$sub_main"
     foreach p $sub_main {
         set c [compute $p]
     }
 
     # Read prompt
     while {$c != "?" && $c != ""} {
-        # puts -nonewline [format %c $c]
+        puts -nonewline [format %c $c]
         set c [compute]
     }
-    # puts $c
+    puts $c
    
     # Input subroutine A
+    puts "Entering subroutine A:\n$A\n$sub_a"
     foreach p $sub_a {
         set c [compute $p]
     }
     while {$c != "?" && $c != ""} {
-        # puts -nonewline [format %c $c]
+        puts -nonewline [format %c $c]
         set c [compute]
     }
-    # puts $c
+    puts $c
 
     # Input subroutine B
+    puts "Entering subroutine B:\n$B\n$sub_b"
     foreach p $sub_b {
         set c [compute $p]
     }
     while {$c != "?" && $c != ""} {
-        # puts -nonewline [format %c $c]
+        puts -nonewline [format %c $c]
         set c [compute]
     }
-    # puts $c
+    puts $c
 
     # Input subroutine C
+    puts "Entering subroutine C:\n$C\n$sub_c"
     foreach p $sub_c {
         set c [compute $p]
     }
     while {$c != "?" && $c != ""} {
-        # puts -nonewline [format %c $c]
+        puts -nonewline [format %c $c]
         set c [compute]
     }
-    # puts $c
+    puts $c
 
     # Input continuous feed
+    puts "n"
+    puts $continuous_feed
     foreach p $continuous_feed {
         set c [compute $p]
     }
@@ -501,7 +625,7 @@ proc solve_part2 {intcode map} {
     # but will give the answer as a number (greater than 127)
     while {[llength [info commands compute]] > 0} {
         if {$c < 127} {
-            # puts -nonewline [format %c $c]
+            puts -nonewline [format %c $c]
         } else {
             set soln2 $c
         }
@@ -517,8 +641,9 @@ proc main {} {
     set soln1 [solve_part1 $map]
     set soln2 [solve_part2 $intcode $map]
     puts "The solution to part 1 is $soln1."
-    if {$soln1 != 1544} {error "The solution to part 1 should be 1544."}
     puts "The solution to part 2 is $soln2."
+
+    if {$soln1 != 1544} {error "The solution to part 1 should be 1544."}
     if {$soln2 != 696373} {error "The solution to part 1 should be 696373."}
 }
 
