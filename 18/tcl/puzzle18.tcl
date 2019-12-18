@@ -32,15 +32,19 @@ proc map_to_string {map} {
     return [join [lmap col $map {join $col ""}] "\n"]
 }
 
-proc find_start {map} {
+# Returns a dictionary of keys and their positions. Includes
+# the start position as well.
+proc find_key_posns {map} {
+    set key_posns [dict create]
     for {set row 0} {$row < [llength $map]} {incr row} {
         for {set col 0} {$col < [llength [lindex $map $row]]} {incr col} {
             set c [map_get $map [list $row $col]]
-            if {$c == "@"} {
-                return [list $row $col]
+            if {$c == "@" || [is_key $c]} {
+                dict set key_posns $c [list $row $col]
             }
         }
     }
+    return $key_posns
 }
 
 proc door_key {door} {
@@ -73,83 +77,99 @@ proc clear_path {map posn keys} {
     return 0
 }
 
-proc find_keys {map posn keys} {
-    set key_posns {}
-    set queue [::struct::queue]
-    set visited [dict create]
-    $queue put [list $posn 0]
-    dict set visited $posn 1
+# Builds a graph with edges between keys where
+# each edge is a list: neighbor key, steps, 
+# and doors between the key and neighbor key.
+proc build_graph {map key_posns} {
+    set graph [dict create]
+    dict for {key posn} $key_posns {
+        set key [map_get $map $posn]
+        set queue [::struct::queue]
+        set visited [dict create]
+        $queue put [list $posn 0 {}]
+        dict set visited $posn 1
 
-    while {[$queue size] > 0} {
-        lassign [$queue get] posn steps
-        incr steps
-        foreach neighbor [neighborhood $posn] {
-            if {![clear_path $map $neighbor $keys]} {
-                continue
-            }
-            if {[dict exists $visited $neighbor]} {
-                continue
-            }
-            set c [map_get $map $neighbor]
-            if {[is_key $c] && ![have_key $c $keys]} {
-                lappend key_posns [list $neighbor $steps]
-            } else {
-                $queue put [list $neighbor $steps]
+        while {[$queue size] > 0} {
+            lassign [$queue get] posn steps doors
+            incr steps
+            foreach neighbor [neighborhood $posn] {
+                set doors0 $doors
+                set c [map_get $map $neighbor]
+                if {$c == "#"} {
+                    continue
+                }
+                if {[dict exists $visited $neighbor]} {
+                    continue
+                }
+
+                if {[is_door $c]} {
+                    lappend doors0 $c
+                }
+
+                if {[is_key $c]} {
+                    dict lappend graph $key [list $c $steps $doors0]
+                }
+
+                $queue put [list $neighbor $steps $doors0]
                 dict set visited $neighbor 1
             }
         }
     }
-    return $key_posns
+    return $graph
+}
+
+proc any_doors_locked {doors keys} {
+    foreach door $doors {
+        set key [string tolower $door]
+        if {[lsearch $keys $key] < 0} {
+            return 1
+        }
+    }
+    return 0
+}
+
+proc neighbor_in_path {neighbor keys} {
+    return [expr {[lsearch $keys $neighbor] >= 0}]
 }
 
 proc solve {map} {
-    set shortest_path {}
-    set shortest_steps 999999999
-    
-    set display_steps 0
-    set posn [find_start $map]
-    set queue [::struct::prioqueue -integer]
-    set visited [dict create]
-    $queue put [list $posn {} 0] 0
+    set key_posns [find_key_posns $map]
+    set key_count [llength [dict keys $key_posns]]
+    set graph [build_graph $map $key_posns]
+
+    set min_steps 999999999
+    set min_path {}
+    set queue [::struct::queue]
+    $queue put [list [dict get $key_posns @] 0 {@}]
     while {[$queue size] > 0} {
-        lassign [$queue get] posn keys steps
-        set state_key [list [lsort $keys] $posn]
-        if {[dict exists $visited $state_key] && $steps > [dict get $visited $state_key]} {
-            continue
-        }
-        # puts "item @$posn keys $keys steps $steps"
-        if {$steps > $display_steps} {
-            puts $steps
-            set display_steps $steps
-        }
-        if {$steps > $shortest_steps} {
-            break
-        }
-        set key_posns [find_keys $map $posn $keys]
-        if {$key_posns == {}} {
-            if {$steps < $shortest_steps} {
-                puts "retrieved $keys in $steps steps"
-                set shortest_path $keys
-                set shortest_steps $steps
-                break
+        lassign [$queue get] posn steps keys
+        # puts "$posn $steps $keys"
+        if {[llength $keys] == $key_count} {
+            puts "Found $keys in $steps"
+            if {$steps < $min_steps} {
+                set min_steps $steps
+                set min_path $keys
             }
         }
-        foreach k $key_posns {
-            lassign $k key_posn key_steps
-            # puts "\t[map_get $map $key_posn] @ $key_posn key steps $key_steps"
-            set keys0 [concat $keys [list [map_get $map $key_posn]]]
-            set steps0 [expr {$steps + $key_steps}]
-            set state_key [list [lsort $keys0] $key_posn]
-            if {[dict exists $visited $state_key] && $steps0 <= [dict get $visited $state_key]} {
+        set key [map_get $map $posn]
+        foreach edge [dict get $graph $key] {
+            lassign $edge neighbor_key neighbor_steps neighbor_doors
+            set neighbor_posn [dict get $key_posns $neighbor_key]
+            if {[neighbor_in_path $neighbor_key $keys]} {
+                # puts "$neighbor_key is already in my path."
                 continue
             }
-            set state [list $key_posn $keys0 $steps0]
-            # puts "\tenqueuing $state with priority -$steps0"
-            $queue put $state -$steps0
-            dict set visited $keys $steps0
+            if {[any_doors_locked $neighbor_doors $keys]} {
+                # puts "my $keys cannot unlock all $neighbor_doors"
+                continue
+            }
+            $queue put [list \
+                        $neighbor_posn \
+                        [expr {$steps + $neighbor_steps}] \
+                        [concat $keys [list $neighbor_key]]]
         }
     }
-    return [list $shortest_path $shortest_steps]
+    return [list $min_path $min_steps]
 }
 
 proc main {} {
