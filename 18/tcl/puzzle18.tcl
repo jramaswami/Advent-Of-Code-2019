@@ -137,18 +137,24 @@ proc solve {map} {
     set key_count [llength [dict keys $key_posns]]
     set graph [build_graph $map $key_posns]
 
+    set display_steps 0
     set min_steps 999999999
     set min_path {}
-    set queue [::struct::queue]
-    $queue put [list [dict get $key_posns @] 0 {@}]
+    set queue [::struct::prioqueue]
+    $queue put [list [dict get $key_posns @] 0 {@}] 0
     while {[$queue size] > 0} {
         lassign [$queue get] posn steps keys
         # puts "$posn $steps $keys"
+        if {$steps > $display_steps} {
+            puts $steps
+            set display_steps $steps
+        }
         if {[llength $keys] == $key_count} {
             puts "Found $keys in $steps"
             if {$steps < $min_steps} {
                 set min_steps $steps
                 set min_path $keys
+                break
             }
         }
         set key [map_get $map $posn]
@@ -163,10 +169,9 @@ proc solve {map} {
                 # puts "my $keys cannot unlock all $neighbor_doors"
                 continue
             }
-            $queue put [list \
-                        $neighbor_posn \
-                        [expr {$steps + $neighbor_steps}] \
-                        [concat $keys [list $neighbor_key]]]
+            set steps0 [expr {$steps + $neighbor_steps}]
+            set keys0 [concat $keys [list $neighbor_key]]
+            $queue put [list $neighbor_posn $steps0 $keys0] -$steps0
         }
     }
     return [list $min_path $min_steps]
