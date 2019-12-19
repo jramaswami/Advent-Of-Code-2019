@@ -3,6 +3,7 @@ Advent of Code 2019 :: Day 18 :: Many-Worlds Interpretation
 https://adventofcode.com/2019/day/18
 """
 from collections import deque, defaultdict
+from itertools import permutations
 from math import inf
 
 def maze_get(maze, posn):
@@ -33,41 +34,41 @@ def neighborhood(posn):
             (row, col - 1), (row, col + 1))
 
 
-def find_key_posns(maze):
+def find_nodes(maze):
     """
-    Returns a dictionary of key positions, 
-    including start.
+    Returns a dictionary of key, door, and start positions.
     """
     key_posns = {}
     for row_index, row in enumerate(maze):
         for col_index, cell in enumerate(row):
-            if is_key(cell) or cell == "@":
+            if is_key(cell) or is_door(cell) or cell == "@":
                 key_posns[cell] = (row_index, col_index)
     return key_posns
 
 
-def build_graph(maze, key_posns):
+def build_graph(maze, nodes):
     """Transform maze into a graph."""
     graph = defaultdict(list)
-    for key, key_posn in key_posns.items():
-        queue = deque([(key_posn, 0, [])])
+    for node_name, node_posn in nodes.items():
+        queue = deque([(node_posn, 0)])
         visited = set()
-        visited.add(key_posn)
+        visited.add(node_posn)
         while queue:
-            posn, steps, doors = queue.popleft()
+            posn, steps = queue.popleft()
             steps += 1
             for neighbor in neighborhood(posn):
                 if neighbor in visited:
                     continue
                 cell = maze_get(maze, neighbor)
-                doors0 = list(doors)
                 if is_wall(cell):
                     continue
                 if is_door(cell):
-                    doors0.append(cell)
+                    graph[node_name].append((cell, steps))
+                    continue
                 if is_key(cell):
-                    graph[key].append((cell, steps, doors0))
-                queue.append((neighbor, steps, doors0))
+                    graph[node_name].append((cell, steps))
+                    continue
+                queue.append((neighbor, steps))
                 visited.add(neighbor)
     return graph
 
@@ -88,52 +89,82 @@ def key_index(key):
     return ord(key) - ord('a')
 
 
-def build_topo_graph(graph):
-    """Build a topological graph."""
-    topo = defaultdict(list)
-    indegree = [0 for _ in graph.keys()]
-    for key, _, blocking_doors in graph["@"]:
-        index = key_index(key)
-        for door in blocking_doors:
-            topo[door.lower()].append(key)
-            indegree[index] += 1
-    return topo, indegree
+def find_visible_nodes(graph, start):
+    """Find the doors visible from start."""
+    visible_keys = []
+    visible_doors = []
+    queue = deque()
+    queue.append(start)
+    visited = set()
+    visited.add(start)
+    while queue:
+        node = queue.popleft()
+        for neighbor, _ in graph[node]:
+            if neighbor in visited:
+                continue
+            if is_door(neighbor):
+                visible_doors.append(neighbor)
+                continue
 
+            visible_keys.append(neighbor)
+            visited.add(neighbor)
+
+    return visible_keys, visible_doors
+
+
+def bfs(graph, start, keys_picked_up, distance_between, keys_needed):
+    """
+    Go from start to every other node, caching keys picked
+    up and the distance between the nodes.
+    """
+    queue = deque()
+    queue.append((start, 0, set(), set()))
+    visited = {}
+    visited[start] = True
+
+    while queue:
+        node, steps, keys, doors = queue.popleft()
+        for neighbor, neighbor_steps in graph[node]:
+            if neighbor not in visited:
+                distance = steps + neighbor_steps
+                distance_between[start][neighbor] = distance
+                neighbor_keys = keys.copy()
+                neighbor_doors = doors.copy()
+                if is_key(neighbor):
+                    neighbor_keys.add(neighbor)
+                if is_door(neighbor):
+                    neighbor_doors.add(neighbor.lower())
+                keys_picked_up[start][neighbor] = neighbor_keys
+                keys_needed[start][neighbor] = neighbor_doors
+                visited[neighbor] = True
+                queue.append((neighbor, neighbor_steps, neighbor_keys, neighbor_doors))
 
 def solve(maze):
     """Solve puzzle."""
-    min_steps = inf
-    key_posns = find_key_posns(maze)
-    key_count = len(key_posns) - 1
-    graph = build_graph(maze, key_posns)
-    topo, indegree = build_topo_graph(graph)
-    queue = deque()
-    queue.append(("@", 0, list(indegree), 0))
-    indegree[-1] = -1
-    visited = {}
-    while queue:
-        key, steps, current_indegree, keys_gathered = queue.popleft()
-        if steps > min_steps:
-            continue
-        state_key = (key, tuple(current_indegree))
-        if state_key in visited and steps > visited[state_key]:
-            print("repeat...")
-            continue
-        if keys_gathered == key_count:
-            if steps < min_steps:
-                min_steps = steps
-        for neighbor, neighbor_steps, _ in graph[key]:
-            neighbor_index = key_index(neighbor)
-            if current_indegree[neighbor_index] == 0:
-                next_indegree = list(current_indegree)
-                next_indegree[neighbor_index] -= 1 # visited
-                for blocked in topo[neighbor]:
-                    blocked_index = key_index(blocked)
-                    next_indegree[blocked_index] -= 1
-                next_steps = neighbor_steps + steps
-                queue.append((neighbor, next_steps, next_indegree, keys_gathered + 1))
+    nodes = find_nodes(maze)
+    graph = build_graph(maze, nodes)
 
-    return min_steps
+    keys_picked_up = defaultdict(lambda: defaultdict(set))
+    distance_between = defaultdict(lambda: defaultdict(int))
+    keys_needed = defaultdict(lambda: defaultdict(set))
+
+    for node in nodes:
+        bfs(graph, node, keys_picked_up, distance_between, keys_needed)
+
+    for node1 in nodes:
+        for node2 in nodes:
+            if node1 == node2:
+                continue
+            print(node1, node2, 
+                    distance_between[node1][node2], 
+                    keys_picked_up[node1][node2],
+                    keys_needed[node1][node2])
+
+
+
+    #visible_keys, visible_doors = find_visible_nodes(graph, "@")
+    #print(visible_keys)
+    #print(visible_doors)
 
 def main():
     """Main program."""
