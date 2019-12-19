@@ -2,16 +2,33 @@
 # https://adventofcode.com/2019/day/18
 
 package require struct::queue
-package require struct::prioqueue
+package require struct::set
 
-proc parse_map {input} {
-    set map {}
+proc parse_maze {input} {
+    set maze {}
     set row_index 0
     foreach line [split $input "\n"] {
         set row_data [split $line ""]
-        lappend map $row_data
+        lappend maze $row_data
     }
-    return $map
+    return $maze
+}
+
+proc is_key {cell} { return [string is lower $cell] }
+
+proc is_door {cell} { return [string is upper $cell] }
+
+proc is_open {cell} { 
+    return [expr {$cell == "." || [is_start $cell]}] }
+
+proc is_wall {cell} { return [expr {$cell == "#"}] }
+
+proc is_start {cell} {
+    return [expr {$cell == "@" || [string is integer $cell]}]
+}
+
+proc is_node {cell} {
+    return [expr {[is_key $cell] || [is_door $cell] || [is_start $cell]}]
 }
 
 proc neighborhood {posn} {
@@ -23,166 +40,243 @@ proc neighborhood {posn} {
     return [list $u $d $l $r]
 }
 
-proc map_get {map posn} {
+proc maze_get {maze posn} {
     lassign $posn row col
-    return [lindex [lindex $map $row] $col]
+    return [lindex [lindex $maze $row] $col]
 }
 
-proc map_to_string {map} {
-    return [join [lmap col $map {join $col ""}] "\n"]
+proc maze_set {maze_var posn value} {
+    upvar $maze_var maze
+    lset maze $posn $value
 }
 
-# Returns a dictionary of keys and their positions. Includes
-# the start position as well.
-proc find_key_posns {map} {
-    set key_posns [dict create]
-    for {set row 0} {$row < [llength $map]} {incr row} {
-        for {set col 0} {$col < [llength [lindex $map $row]]} {incr col} {
-            set c [map_get $map [list $row $col]]
-            if {$c == "@" || [is_key $c]} {
-                dict set key_posns $c [list $row $col]
+proc maze_to_string {maze} {
+    return [join [lmap col $maze {join $col ""}] "\n"]
+}
+
+proc find_nodes {maze} {
+    set nodes [dict create]
+    for {set row 0} {$row < [llength $maze]} {incr row} {
+        for {set col 0} {$col < [llength [lindex $maze $row]]} {incr col} {
+            set posn [list $row $col]
+            set cell [maze_get $maze $posn]
+            if {[is_node $cell]} {
+                dict set nodes $cell $posn
             }
         }
     }
-    return $key_posns
+    return $nodes
 }
 
-proc door_key {door} {
-    return [string tolower $door]
-}
-
-proc door_unlocked {door keys} {
-    set key [door_key $door]
-    return [have_key $key $keys]
-}
-
-proc is_key {c} {
-    return [string is lower $c]
-}
-
-proc is_door {c} {
-    return [string is upper $c]
-}
-
-proc have_key {key keys} {
-    set result [expr {[lsearch $keys $key] >= 0}]
-    return $result
-}
-
-proc clear_path {map posn keys} {
-    set c [map_get $map $posn]
-    if {$c == "@" || $c == "."} {return 1}
-    if {[is_key $c]} { return 1}
-    if {[is_door $c] && [door_unlocked $c $keys]} {return 1}
-    return 0
-}
-
-# Builds a graph with edges between keys where
-# each edge is a list: neighbor key, steps, 
-# and doors between the key and neighbor key.
-proc build_graph {map key_posns} {
+proc maze_to_graph {maze nodes} {
     set graph [dict create]
-    dict for {key posn} $key_posns {
-        set key [map_get $map $posn]
+    foreach start [dict keys $nodes] {
+        set start_posn [dict get $nodes $start]
         set queue [::struct::queue]
+        $queue put [list $start_posn 0]
         set visited [dict create]
-        $queue put [list $posn 0 {}]
-        dict set visited $posn 1
-
+        dict set visited $start_posn 1
         while {[$queue size] > 0} {
-            lassign [$queue get] posn steps doors
-            incr steps
-            foreach neighbor [neighborhood $posn] {
-                set doors0 $doors
-                set c [map_get $map $neighbor]
-                if {$c == "#"} {
+            lassign [$queue get] node_posn node_steps
+            set node_cell [maze_get $maze $node_posn]
+            set neighbor_steps [expr {$node_steps + 1}]
+            foreach neighbor_posn [neighborhood $node_posn] {
+                if {[dict exists $visited $neighbor_posn]} {
                     continue
                 }
-                if {[dict exists $visited $neighbor]} {
+                set neighbor_cell [maze_get $maze $neighbor_posn]
+                if {[is_wall $neighbor_cell]} {
                     continue
+                } elseif {[is_open $neighbor_cell]} {
+                    $queue put [list $neighbor_posn $neighbor_steps]
+                    dict set visited $neighbor_posn 1
+                } elseif {[string is alpha $neighbor_cell]} {
+                    dict lappend graph $start [list $neighbor_cell $neighbor_steps]
                 }
-
-                if {[is_door $c]} {
-                    lappend doors0 $c
-                }
-
-                if {[is_key $c]} {
-                    dict lappend graph $key [list $c $steps $doors0]
-                }
-
-                $queue put [list $neighbor $steps $doors0]
-                dict set visited $neighbor 1
             }
         }
     }
     return $graph
 }
 
-proc any_doors_locked {doors keys} {
-    foreach door $doors {
-        set key [string tolower $door]
-        if {[lsearch $keys $key] < 0} {
-            return 1
-        }
-    }
-    return 0
+proc key_index {key} {
+    set ascii [scan $key %c]
+    return [expr {$ascii - 97}]
 }
 
-proc neighbor_in_path {neighbor keys} {
-    return [expr {[lsearch $keys $neighbor] >= 0}]
+proc add_key {keyset key} {
+    set offset [key_index $key]
+    set mask [expr {1 << $offset}]
+    return [expr {$keyset | $mask}]
 }
 
-proc solve {map} {
-    set key_posns [find_key_posns $map]
-    set key_count [llength [dict keys $key_posns]]
-    set graph [build_graph $map $key_posns]
+proc have_key {keyset key} {
+    set offset [key_index $key]
+    set mask [expr {1 << $offset}]
+    return [expr {$keyset & $mask}]
+}
 
-    set display_steps 0
-    set min_steps 999999999
-    set min_path {}
-    set queue [::struct::prioqueue]
-    $queue put [list [dict get $key_posns @] 0 {@}] 0
-    while {[$queue size] > 0} {
-        lassign [$queue get] posn steps keys
-        # puts "$posn $steps $keys"
-        if {$steps > $display_steps} {
-            puts $steps
-            set display_steps $steps
-        }
-        if {[llength $keys] == $key_count} {
-            puts "Found $keys in $steps"
-            if {$steps < $min_steps} {
-                set min_steps $steps
-                set min_path $keys
-            }
-        }
-        set key [map_get $map $posn]
-        foreach edge [dict get $graph $key] {
-            lassign $edge neighbor_key neighbor_steps neighbor_doors
-            set neighbor_posn [dict get $key_posns $neighbor_key]
-            if {[neighbor_in_path $neighbor_key $keys]} {
-                # puts "$neighbor_key is already in my path."
-                continue
-            }
-            if {[any_doors_locked $neighbor_doors $keys]} {
-                # puts "my $keys cannot unlock all $neighbor_doors"
-                continue
-            }
-            set steps0 [expr {$steps + $neighbor_steps}]
-            set keys0 [concat $keys [list $neighbor_key]]
-            $queue put [list $neighbor_posn $steps0 $keys0] -[llength $keys0]
+proc union_keysets {keyset1 keyset2} {
+    return [expr {$keyset1 | $keyset2}]
+}
+
+proc solve_part1 {maze} {
+    set nodes [find_nodes $maze]
+    set key_count 0
+    foreach node [dict keys $nodes] {
+        if {[is_key $node]} {
+            incr key_count
         }
     }
-    return [list $min_path $min_steps]
+    set all_keys [expr {(1 << ($key_count)) - 1}]
+    set graph [maze_to_graph $maze $nodes]
+    set starting_state [list "@" 0]
+    set state_steps [dict create]
+    dict set state_steps $starting_state 0
+    set queue [dict create]
+    dict set queue $starting_state 1
+    set new_queue [dict create]
+    set min_steps 99999
+    while {[dict size $queue] > 0} {
+        foreach state [dict keys $queue] {
+            lassign $state node keys_found
+            # puts "$node [format %b $keys_found]"
+            if {[dict get $state_steps $state] >= $min_steps} {
+                continue
+            }
+            if {$keys_found == $all_keys} {
+                set steps [dict get $state_steps $state] 
+                set min_steps [::tcl::mathfunc::min $steps $min_steps]
+            }
+            set node_steps [dict get $state_steps $state]
+            foreach neighbor [dict get $graph $node] {
+                lassign $neighbor neighbor_cell neighbor_steps
+                set next_keys_found $keys_found
+                if {[is_key $neighbor_cell]} {
+                    set next_keys_found [add_key $keys_found $neighbor_cell]
+                } elseif {[is_door $neighbor_cell]} {
+                    set key_needed [string tolower $neighbor_cell]
+                    if {![have_key $next_keys_found $key_needed]} {
+                        continue
+                    }
+                }
+                set next_state [list $neighbor_cell $next_keys_found]
+                set next_steps [expr {$node_steps + $neighbor_steps}]
+                if {![dict exists $state_steps $next_state]} {
+                    dict set state_steps $next_state $next_steps
+                    dict set new_queue $next_state 1
+                } elseif {$next_steps < [dict get $state_steps $next_state]} {
+                    dict set state_steps $next_state $next_steps
+                    dict set new_queue $next_state 1
+                }
+            }
+        }
+        set queue $new_queue
+        set new_queue [dict create]
+    }
+    return $min_steps
+}
+
+proc update_maze {maze} {
+    for {set row 0} {$row < [llength $maze]} {incr row} {
+        for {set col 0} {$col < [llength [lindex $maze $row]]} {incr col} {
+            set cell [maze_get $maze [list $row $col]]
+            if {[is_start $cell]} {
+                set start_posn [list $row $col]
+                break
+            }
+        }
+    }
+    lassign $start_posn row col
+    maze_set maze [list [expr {$row - 1}] [expr {$col - 1}]] 1
+    maze_set maze [list [expr {$row - 1}] [expr {$col}]] "#"
+    maze_set maze [list [expr {$row - 1}] [expr {$col + 1}]] 2
+    maze_set maze [list $row [expr {$col - 1}]] "#"
+    maze_set maze [list $row [expr {$col}]] "#"
+    maze_set maze [list $row [expr {$col + 1}]] "#"
+    maze_set maze [list [expr {$row + 1}] [expr {$col - 1}]] 3
+    maze_set maze [list [expr {$row + 1}] [expr {$col}]] "#"
+    maze_set maze [list [expr {$row + 1}] [expr {$col + 1}]] 4
+    return $maze
+}
+
+proc solve_part2 {maze} {
+    set nodes [find_nodes $maze]
+    set key_count 0
+    foreach node [dict keys $nodes] {
+        if {[is_key $node]} {
+            incr key_count
+        }
+    }
+    set all_keys [expr {(1 << ($key_count)) - 1}]
+    set graph [maze_to_graph $maze $nodes]
+    set starting_state [list [list 1 2 3 4] 0]
+    set state_steps [dict create]
+    dict set state_steps $starting_state 0
+    set queue [dict create]
+    dict set queue $starting_state 1
+    set new_queue [dict create]
+    set min_steps 99999
+    while {[dict size $queue] > 0} {
+        foreach state [dict keys $queue] {
+            lassign $state robot_nodes keys_found
+            if {[dict get $state_steps $state] >= $min_steps} {
+                continue
+            }
+            if {$keys_found == $all_keys} {
+                set steps [dict get $state_steps $state] 
+                set min_steps [::tcl::mathfunc::min $steps $min_steps]
+            }
+
+            # Each robot can move
+            for {set robot 0} {$robot < 4} {incr robot} {
+                set robot_node [lindex $robot_nodes $robot]
+                set node_steps [dict get $state_steps $state]
+                foreach neighbor [dict get $graph $robot_node] {
+                    lassign $neighbor neighbor_cell neighbor_steps
+                    set next_keys_found $keys_found
+                    if {[is_key $neighbor_cell]} {
+                        set next_keys_found [add_key $keys_found $neighbor_cell]
+                    } elseif {[is_door $neighbor_cell]} {
+                        set key_needed [string tolower $neighbor_cell]
+                        if {![have_key $next_keys_found $key_needed]} {
+                            continue
+                        }
+                    }
+                    set next_robot_nodes $robot_nodes
+                    lset next_robot_nodes $robot $neighbor_cell
+                    set next_state [list $next_robot_nodes $next_keys_found]
+                    set next_steps [expr {$node_steps + $neighbor_steps}]
+                    if {![dict exists $state_steps $next_state]} {
+                        dict set state_steps $next_state $next_steps
+                        dict set new_queue $next_state 1
+                    } elseif {$next_steps < [dict get $state_steps $next_state]} {
+                        dict set state_steps $next_state $next_steps
+                        dict set new_queue $next_state 1
+                    }
+                }
+            }
+        }
+        set queue $new_queue
+        set new_queue [dict create]
+    }
+    return $min_steps
 }
 
 proc main {} {
     set input [string trim [read stdin]]
-    set map [parse_map $input]
-    lassign [solve $map] path steps
-    puts "The solution to part 1 is $steps."
+    set maze [parse_maze $input]
+    set soln1 [solve_part1 $maze] 
+    puts "The solution to part 1 is $soln1."
+    if {$soln1 != 6098} {error "The solution to part 1 should be 6098."}
+
+    puts "Stand by ...."
+    set maze [update_maze $maze]
+    set soln2 [solve_part2 $maze] 
+    puts "The solution to part 2 is $soln2."
+    if {$soln2 != 1698} {error "The solution to part 2 should be 1698."}
 }
-    
+
 if {$::argv0 == [info script]} {
     main
 }
