@@ -299,25 +299,6 @@ proc solve_part2 {intcode} {
     return 0
 }
 
-proc closest_point_in_square {x0 y0} {
-    set min_dist 9999999
-    set min_x 0
-    set min_y 0
-    for {set y_off 0} {$y_off < 100} {incr y_off} {
-        for {set x_off 0} {$x_off < 100} {incr x_off} {
-            set x [expr {$x0 + $x_off}]
-            set y [expr {$y0 + $y_off}]
-            set d [dist $x $y]
-            if {$d < $min_dist} {
-                set min_dist $d
-                set min_x $x
-                set min_y $y
-            }
-        }
-    }
-    return [list $min_dist $min_x $min_y]
-}
-
 proc main {} {
     set input [string trim [read stdin]]
     set intcode [split $input ","]
