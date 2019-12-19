@@ -3,6 +3,7 @@ Advent of Code 2019 :: Day 18 :: Many-Worlds Interpretation
 https://adventofcode.com/2019/day/18
 """
 from collections import deque, defaultdict
+from math import inf
 
 def maze_get(maze, posn):
     """Return maze cell at posn."""
@@ -80,47 +81,64 @@ def any_doors_locked(doors, keys):
     return False
 
 
+def key_index(key):
+    """Returns the index of the key."""
+    if key == "@":
+        return -1
+    return ord(key) - ord('a')
+
+
+def build_topo_graph(graph):
+    """Build a topological graph."""
+    topo = defaultdict(list)
+    indegree = [0 for _ in graph.keys()]
+    for key, _, blocking_doors in graph["@"]:
+        index = key_index(key)
+        for door in blocking_doors:
+            topo[door.lower()].append(key)
+            indegree[index] += 1
+    return topo, indegree
+
+
 def solve(maze):
     """Solve puzzle."""
-    min_steps = 99999
-    min_path = None
+    min_steps = inf
     key_posns = find_key_posns(maze)
     key_count = len(key_posns) - 1
     graph = build_graph(maze, key_posns)
+    topo, indegree = build_topo_graph(graph)
     queue = deque()
-    queue.append((key_posns["@"], 0, []))
+    queue.append(("@", 0, list(indegree), 0))
+    indegree[-1] = -1
+    visited = {}
     while queue:
-        posn, steps, keys = queue.popleft()
-        key = maze_get(maze, posn)
+        key, steps, current_indegree, keys_gathered = queue.popleft()
         if steps > min_steps:
             continue
-        print(key, posn, steps, keys)
-        if len(keys) == key_count:
-            print(keys, steps)
+        state_key = (key, tuple(current_indegree))
+        if state_key in visited and steps > visited[state_key]:
+            print("repeat...")
+            continue
+        if keys_gathered == key_count:
             if steps < min_steps:
                 min_steps = steps
-                min_path = keys
+        for neighbor, neighbor_steps, _ in graph[key]:
+            neighbor_index = key_index(neighbor)
+            if current_indegree[neighbor_index] == 0:
+                next_indegree = list(current_indegree)
+                next_indegree[neighbor_index] -= 1 # visited
+                for blocked in topo[neighbor]:
+                    blocked_index = key_index(blocked)
+                    next_indegree[blocked_index] -= 1
+                next_steps = neighbor_steps + steps
+                queue.append((neighbor, next_steps, next_indegree, keys_gathered + 1))
 
-        for neighbor_key, neighbor_steps, neighbor_doors in graph[key]:
-            neighbor_posn = key_posns[neighbor_key]
-            # print("neighbor", neighbor_key, neighbor_posn,neighbor_steps, neighbor_doors)
-            if neighbor_key in keys:
-                # print('I already have', neighbor_key, 'in', keys)
-                continue
-            if any_doors_locked(neighbor_doors, keys):
-                # print('I cannot open', neighbor_doors, 'with', keys)
-                continue
-            steps0 = steps + neighbor_steps
-            keys0 = list(keys)
-            keys0.append(neighbor_key)
-            queue.append((neighbor_posn, steps0, keys0))
-
-    return (min_path, min_steps)
-
+    return min_steps
 
 def main():
     """Main program."""
     import sys
+    sys.setrecursionlimit(10000000)
     maze = [line.strip() for line in sys.stdin.readlines()]
     print(solve(maze))
 
