@@ -254,45 +254,83 @@ proc solve_part1 {intcode} {
     return $pulled_count
 }
 
+proc check_corners {intcode x y} {
+    set x1 [expr {$x + 100}]
+    set y1 [expr {$y + 100}]
+    # Check bottom left
+    if {[get_drone_status $intcode $x $y1] == 0} {
+        return 0
+    }
+    # Check top right
+    if {[get_drone_status $intcode $x1 $y] == 0} {
+        return 0
+    }
+    return 1
+}
+
+proc dist {x y} {
+    return [expr {sqrt(($x * $x) + ($y * $y))}]
+}
+
 proc solve_part2 {intcode} {
     # 9340756 is too high
     # 9310753 is too high
-    set limit 10000
+    set min_dist 999999
+    set min_x 0
+    set min_y 0
     set x_start 0
-    for {set y 700} {$y < $limit} {incr y} {
+    # Previous runs show that the anwer is north of 740 ...
+    for {set y 740} {$y < 800} {incr y} {
         set flag 0
         set width 0
-        puts "row $y"
-        for {set x $x_start} {$x < $limit} {incr x} {
+        for {set x 0} {$x < 10000} {incr x} {
             set status [get_drone_status $intcode $x $y]
             if {$status} {
                 if {!$flag} {
                     set flag $x
                 }
+
+                # Check corners
+                set x1 [expr {$x + 99}]
+                set y1 [expr {$y + 99}]
+                # Check bottom left
+                if {[get_drone_status $intcode $x $y1] == 0} {
+                    continue
+                }
+                # Check top right
+                if {[get_drone_status $intcode $x1 $y] == 0} {
+                    continue
+                }
+                lassign [closest_point_in_square $x $y] sq_d sq_x sq_y
+                return [expr {(10000 * $sq_x) + $sq_y}]
             } else {
                 if {$flag > 0} {
                     break
                 }
             }
-            set x1 [expr {$x - 100}]
-            set y1 [expr {$y + 100}]
-            if {$x1 >= 0} {
-                set status1 [get_drone_status $intcode $x1 $y1]
-
-
-                if {$status1} {
-                    puts "last x $x $y [get_drone_status $intcode $x $y]"
-                    puts "last x + 1 [expr {$x + 1}] $y [get_drone_status $intcode [expr {$x + 1}] $y]"
-                    puts "bingo pt $x1 $y [get_drone_status $intcode $x1 $y]"
-                    puts "bottom corner $x1 $y1 $status1"
-                    puts "Bingo $x1"
-                    return [expr {(10000 * $x1) + $y}]
-                }
-            }
-            set x_start [expr {$x - 1}]
+            set x_start $flag
         }
     }
-    return None
+    return [list $min_x $min_y]
+}
+
+proc closest_point_in_square {x0 y0} {
+    set min_dist 9999999
+    set min_x 0
+    set min_y 0
+    for {set y_off 0} {$y_off < 100} {incr y_off} {
+        for {set x_off 0} {$x_off < 100} {incr x_off} {
+            set x [expr {$x0 + $x_off}]
+            set y [expr {$y0 + $y_off}]
+            set d [dist $x $y]
+            if {$d < $min_dist} {
+                set min_dist $d
+                set min_x $x
+                set min_y $y
+            }
+        }
+    }
+    return [list $min_dist $min_x $min_y]
 }
 
 proc main {} {
@@ -303,7 +341,7 @@ proc main {} {
     if {$soln1 != 231} {error "The solution to part 1 should be 231."}
     set soln2 [solve_part2 $intcode]
     puts "The solution to part 2 is $soln2."
-
+    if {$soln2 != 9210745} {error "The solution to part 2 should be 9210745."}
 }
 
 if {$::argv0 == [info script]} {
