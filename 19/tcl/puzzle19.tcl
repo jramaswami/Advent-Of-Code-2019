@@ -254,64 +254,49 @@ proc solve_part1 {intcode} {
     return $pulled_count
 }
 
-proc check_corners {intcode x y} {
-    set x1 [expr {$x + 100}]
-    set y1 [expr {$y + 100}]
-    # Check bottom left
-    if {[get_drone_status $intcode $x $y1] == 0} {
+proc box_fits {intcode x y} {
+    # Check corners
+    set x1 [expr {$x - 99}]
+    set y1 [expr {$y + 99}]
+    if {$x1 < 0} {
         return 0
     }
-    # Check top right
+    # Check bottom left
+    if {[get_drone_status $intcode $x1 $y1] == 0} {
+        return 0
+    }
+    # Check top left
     if {[get_drone_status $intcode $x1 $y] == 0} {
         return 0
     }
     return 1
 }
 
-proc dist {x y} {
-    return [expr {sqrt(($x * $x) + ($y * $y))}]
-}
-
 proc solve_part2 {intcode} {
-    # 9340756 is too high
-    # 9310753 is too high
-    set min_dist 999999
-    set min_x 0
-    set min_y 0
     set x_start 0
     # Previous runs show that the anwer is north of 740 ...
-    for {set y 740} {$y < 800} {incr y} {
+    for {set y 10} {$y < 800} {incr y} {
         set flag 0
-        set width 0
-        for {set x 0} {$x < 10000} {incr x} {
+        for {set x $x_start} {$x < 10000} {incr x} {
             set status [get_drone_status $intcode $x $y]
             if {$status} {
                 if {!$flag} {
-                    set flag $x
+                    set flag 1
                 }
-
-                # Check corners
-                set x1 [expr {$x + 99}]
-                set y1 [expr {$y + 99}]
-                # Check bottom left
-                if {[get_drone_status $intcode $x $y1] == 0} {
-                    continue
-                }
-                # Check top right
-                if {[get_drone_status $intcode $x1 $y] == 0} {
-                    continue
-                }
-                lassign [closest_point_in_square $x $y] sq_d sq_x sq_y
-                return [expr {(10000 * $sq_x) + $sq_y}]
             } else {
-                if {$flag > 0} {
+                if {$flag} {
+                    set x0 [expr {$x - 1}]
+                    set x1 [expr {$x0 - 99}]
+                    if {[box_fits $intcode $x0 $y]} {
+                        return [expr {(10000 * $x1) + $y}]
+                    }
                     break
                 }
             }
-            set x_start $flag
+            set x_start $x
         }
     }
-    return [list $min_x $min_y]
+    return 0
 }
 
 proc closest_point_in_square {x0 y0} {
