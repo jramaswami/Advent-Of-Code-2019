@@ -2,6 +2,8 @@
 # https://adventofcode.com/2019/day/20
 
 package require struct::queue
+package require struct::graph
+package require struct::graph::op
 
 proc parse_maze {input} {
     set maze {}
@@ -51,47 +53,62 @@ proc get_portal_label {maze posn} {
     if {[is_label [maze_get $maze $up]]} {
         set a [maze_get $maze $up]
         set b [maze_get $maze [list [expr {$row - 2}] $col]]
-        return "${b}${a}"
     } elseif {[is_label [maze_get $maze $dn]]} {
         set a [maze_get $maze $dn]
         set b [maze_get $maze [list [expr {$row + 2}] $col]]
-        return "${a}${b}"
     } elseif {[is_label [maze_get $maze $lf]]} {
         set a [maze_get $maze $lf]
         set b [maze_get $maze [list $row [expr {$col - 2}]]]
-        return "${b}${a}"
     } elseif {[is_label [maze_get $maze $rt]]} {
         set a [maze_get $maze $rt]
         set b [maze_get $maze [list $row [expr {$col + 2}]]]
-        return "${a}${b}"
+    }
+    if {$a < $b} {
+        return [list $a $b]
+    } else {
+        return [list $b $a]
     }
 }
 
-proc find_posns_portals {maze} {
+proc find_portals {maze} {
     set posns_portals [dict create]
+    set portals_posns [dict create]
     for {set row 0} {$row < [llength $maze]} {incr row} {
         set row_data [lindex $maze $row]
         for {set col 0} {$col < [string length $row_data]} {incr col} {
             set posn [list $row $col]
             if {[is_portal_posn $maze $posn]} {
-                set portal_label [get_portal_label $maze $posn]
+                lassign [get_portal_label $maze $posn] a b
+                set portal_label "${a}${b}"
+                if {[dict exists $portals_posns $portal_label]} {
+                    set portal_label "${b}${a}"
+                }
                 dict set posns_portals $posn $portal_label
+                dict set portals_posns $portal_label $posn
             }
         }
     }
-    return $posns_portals
+    return [list $posns_portals $portals_posns]
 }
 
 proc maze_to_graph {maze} {
     # Find the positions of the portals.
-    set posns_portals [find_posns_portals $maze]
-    # Create dict to look up the matching portal.
-    set portals_posns [dict create]
-    dict for {posn portal_label} $posns_portals {
-        dict lappend portals_posns $portal_label $posn
+    lassign [find_portals $maze] posns_portals portals_posns 
+
+    set graph [::struct::graph]
+    dict for {portal_label posn} $portals_posns {
+        $graph node insert $portal_label
     }
 
-    set graph [dict create]
+    dict for {portal_label posn} $portals_posns {
+        set a [string index $portal_label 0]
+        set b [string index $portal_label 1]
+        if {$a < $b} {
+            set edge [$graph arc insert "${a}${b}" "${b}${a}"]
+            $graph arc setweight $edge 1
+        }
+    }
+
     dict for {start_posn start_label} $posns_portals {
         set queue [::struct::queue]
         $queue put [list $start_posn 0]
@@ -107,7 +124,9 @@ proc maze_to_graph {maze} {
                 if {[is_open [maze_get $maze $neighbor]]} {
                     if {[dict exists $posns_portals $neighbor]} {
                         set portal_label [dict get $posns_portals $neighbor]
-                        dict lappend graph $start_label [list $portal_label $dist]
+                        # dict lappend graph $start_label [list $portal_label $dist]
+                        set edge [$graph arc insert $start_label $portal_label]
+                        $graph arc setweight $edge $dist
                     }
                     $queue put [list $neighbor $dist]
                     dict set visited $neighbor 1
@@ -120,47 +139,8 @@ proc maze_to_graph {maze} {
 
 proc solve {maze} {
     set graph [maze_to_graph $maze]
-    set dists [dict create]
-    foreach node [dict keys $graph] {
-        dict set dists $node 999999
-    }
-
-    while {1} {
-        set queue [::struct::queue]
-        $queue put [list "AA" None]
-        set visited [dict create]
-        dict set visited "AA" 1
-        dict set dists "AA" 0
-        set flag 1
-        while {[$queue size] > 0} {
-            lassign [$queue get] node parent
-            set node_dist [dict get $dists $node]
-            puts "node $node $node_dist parent $parent"
-            foreach edge [dict get $graph $node] {
-                lassign $edge neighbor neighbor_steps
-                puts "\t$neighbor $neighbor_steps"
-                if {$neighbor == $parent} {
-                    puts "$neighbor == $parent"
-                    continue
-                }
-                if {![dict exists $visited $neighbor]} {
-                    puts "$neighbor visited"
-                    continue
-                }
-                set next_dist [expr {$neighbor_steps + $node_dist}]
-                if {$next_dist < [dict get $dists $neighbor]} {
-                    set flag 0
-                    dict set dists $neighbor $next_dist
-                }
-                $queue put [list $neighbor $node]
-                dict set visited $neighbor 1
-            }
-        }
-        puts "flag $flag"
-        if {$flag} { break }
-    }
-    puts $dists
-    return 0
+    set dists [::struct::graph::op::dijkstra $graph "AA" -outputformat distances]
+    return [dict get $dists "ZZ"]
 }
 
 proc main {} {
