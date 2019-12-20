@@ -58,54 +58,72 @@ proc get_portal_label {maze posn} {
         set b [maze_get $maze [list [expr {$row - 2}] $col]]
         if {[expr {$row - 2}] == 0} {
             # Outside
-            return [join [lsort -ascii -increasing [list $a $b]] ""]
+            return [string toupper [join [lsort -ascii [list $a $b]] ""]]
         } else {
             # Inside
-            return [join [lsort -ascii -decreasing [list $a $b]] ""]
+            return [string tolower [join [lsort -ascii [list $a $b]] ""]]
         }
     } elseif {[is_label [maze_get $maze $dn]]} {
         set a [maze_get $maze $dn]
         set b [maze_get $maze [list [expr {$row + 2}] $col]]
         if {[expr {$row + 2}] == [expr {$height - 1}]} {
             # Outside
-            return [join [lsort -ascii -increasing [list $a $b]] ""]
+            return [string toupper [join [lsort -ascii [list $a $b]] ""]]
         } else {
             # Inside
-            return [join [lsort -ascii -decreasing [list $a $b]] ""]
+            return [string tolower [join [lsort -ascii [list $a $b]] ""]]
         }
     } elseif {[is_label [maze_get $maze $lf]]} {
         set a [maze_get $maze $lf]
         set b [maze_get $maze [list $row [expr {$col - 2}]]]
         if {[expr {$col - 2}] == 0} {
             # Outside
-            return [join [lsort -ascii -increasing [list $a $b]] ""]
+            return [string toupper [join [lsort -ascii [list $a $b]] ""]]
         } else {
             # Inside
-            return [join [lsort -ascii -decreasing [list $a $b]] ""]
+            return [string tolower [join [lsort -ascii [list $a $b]] ""]]
         }
     } elseif {[is_label [maze_get $maze $rt]]} {
         set a [maze_get $maze $rt]
         set b [maze_get $maze [list $row [expr {$col + 2}]]]
         if {[expr {$col + 2}] == [expr {$width - 1}]} {
             # Outside
-            return [join [lsort -ascii -increasing [list $a $b]] ""]
+            return [string toupper [join [lsort -ascii [list $a $b]] ""]]
         } else {
             # Inside
-            return [join [lsort -ascii -decreasing [list $a $b]] ""]
+            return [string tolower [join [lsort -ascii [list $a $b]] ""]]
         }
     }
 }
 
-proc get_portal_level_offset {portal} {
-    set a [string index $portal 0]
-    set b [string index $portal 1]
-    return [string compare $a $b]
+proc are_connected_portals {portal1 portal2} {
+    return [expr {[string tolower $portal1] == [string tolower $portal2]}]
 }
 
-proc is_outer_portal {portal} {
-    set a [string index $portal 0]
-    set b [string index $portal 1]
-    return [expr {$a < $b}]
+proc is_terminal {portal} {
+    return [expr {$portal == "AA" || $portal == "ZZ"}]
+}
+
+proc get_portal_offset {portal} {
+    if {[is_outer $portal]} {
+        return 1
+    } elseif {[is_terminal $portal]} {
+        return 0
+    } else {
+        return -1
+    }
+}
+
+proc get_opposite_portal {portal} {
+    if {[string is lower $portal]} {
+        return [string toupper $portal]
+    } else {
+        return [string tolower $portal]
+    }
+}
+
+proc is_outer {portal} {
+    return [expr {![is_terminal $portal] && [string is upper $portal]}]
 }
 
 proc find_portals {maze} {
@@ -132,10 +150,8 @@ proc maze_to_graph {maze} {
     set graph [dict create]
 
     dict for {portal_label posn} $portals_posns {
-        set a [string index $portal_label 0]
-        set b [string index $portal_label 1]
-        if {$a != $b} {
-            set opposite_portal_label "${b}${a}"
+        if {![is_terminal $portal_label]} {
+            set opposite_portal_label [get_opposite_portal $portal_label]
             dict lappend graph $portal_label [list $opposite_portal_label 1]
         }
     }
@@ -166,6 +182,7 @@ proc maze_to_graph {maze} {
     return $graph
 }
 
+# Use Dijkstra's algorithm to solve first part of the puzzle.
 proc solve_part1 {graph} {
     set distance [dict create]
     set processed [dict create]
@@ -194,14 +211,8 @@ proc solve_part1 {graph} {
     return [dict get $distance "ZZ"]
 }
 
-proc are_connected_portals {portal1 portal2} {
-    return [expr {[string reverse $portal1] == $portal2}]
-}
-
-proc is_terminal {portal} {
-    return [expr {$portal == "AA" || $portal == "ZZ"}]
-}
-
+# Update the graph to fit the rules for part 2,  by adding th change in levels
+# that occurs when teleporting through a portal.
 proc update_graph {graph} {
     set graph0 [dict create]
     dict for {node edges} $graph {
@@ -209,7 +220,7 @@ proc update_graph {graph} {
             lassign $edge neighbor weight
             set offset 0
             if {[are_connected_portals $node $neighbor]} {
-                set offset [get_portal_level_offset $node]
+                set offset [get_portal_offset $node]
             }
             dict lappend graph0 $node [list $neighbor $weight $offset]
         }
@@ -217,12 +228,27 @@ proc update_graph {graph} {
     return $graph0
 }
 
+# Reconstruction the path taken through the maze.
+proc reconstruct_path {distance parent} {
+    set end_state [list "ZZ" 0]
+    set path [list [list $end_state [dict get $distance $end_state]]]
+    set t [dict get $parent $end_state]
+    while {$t != "None"} {
+        lappend path [list $t [dict get $distance $t]]
+        set t [dict get $parent $t]
+    }
+    return $path
+}
+
+# Use Dijkstra's algorithm to solve the second part of the puzzle.
+# The nodes being searched are not graph nodes, but possible states
+# where a state is a combination of the graph node (portal) and the
+# recursion level.
 proc solve_part2 {graph} {
     set graph [update_graph $graph]
 
     set start_state [list "AA" 0]
     set end_state [list "ZZ" 0]
-
 
     set parent [dict create]
     dict set parent $start_state "None"
@@ -242,26 +268,20 @@ proc solve_part2 {graph} {
         if {[dict exists $processed $current_state]} { continue }
         dict set processed $current_state 1
 
-        # Insert state into distance dict if it does not already exist.
+        # Get the current state
         if {![dict exists $distance $current_state]} {
             dict set distance $current_state 999999999
         }
-
-        # Get the current state
         set current_distance [dict get $distance $current_state]
         if {$current_distance > [dict get $distance $end_state]} {
             continue
         }
         lassign $current_state current_node current_level
-        # puts "$current_node @ $current_level"
 
         # Look at all the neighboring nodes ...
         foreach edge [dict get $graph $current_node] {
 
             lassign $edge neighbor_node neighbor_weight offset
-
-
-            # puts "\t$neighbor_node $offset"
 
             # Build the next state, including any possible level change.
             set neighbor_level [expr {$current_level + $offset}]
@@ -270,58 +290,37 @@ proc solve_part2 {graph} {
             # We can only use terminal portals, AA and ZZ, on level 0.
             # We cannot use non-terminal portals on level 0.
             if {$neighbor_level == 0} {
-                if {[is_outer_portal $neighbor_node]} {
-                    # puts "Cannot use $neighbor_node on level 0"
+                if {[is_outer $neighbor_node]} {
                     continue
                 }
             } else {
                 if {[is_terminal $neighbor_node]} {
-                    # puts "Cannot use $neighbor_node on level $current_level"
                     continue
                 }
             }
 
-            # Insert the next state into the distance dict if it does not already exist.
+            # Insert the next state into the distance dict with "infinite" 
+            # distance, if the state does not already exist.
             if {![dict exists $distance $neighbor_state]} {
                 dict set distance $neighbor_state 999999999
             }
 
             # If the distance to the neighbor state has decreased, then 
-            # update the neighbor_states distance, and enqueue the neighbor
-            # state.
+            # update the neighbor_states distance, enqueue the neighbor
+            # state, and record the parent state.
             set neighbor_distance [dict get $distance $neighbor_state]
             if {[expr {$current_distance + $neighbor_weight}] < $neighbor_distance} {
                 dict set distance $neighbor_state [expr {$current_distance + $neighbor_weight}]
                 $queue put $neighbor_state [expr {-1 * [dict get $distance $neighbor_state]}]
-
-                # puts "$current_state <$current_distance> -> $neighbor_state <[dict get $distance $neighbor_state]>"
                 dict set parent $neighbor_state $current_state
-                if {$neighbor_state == $end_state} {
-                    puts "soln [dict get $distance $neighbor_state]"
-                }
             }
         }
     }
-    puts "Done!"
-    puts "Path"
-    set path [list [list $end_state [dict get $distance $end_state]]]
-    set t [dict get $parent $end_state]
-    while {$t != "None"} {
-        lappend path [list $t [dict get $distance $t]]
-        set t [dict get $parent $t]
-    }
-    foreach item [lreverse $path] {
-        puts $item
-    }
-    puts "Graph"
-    foreach node [lsort [dict keys $graph]] {
-        puts "$node: [dict get $graph $node]"
-    }
+    # set path [reconstruct_path $distance $parent]
     return [dict get $distance $end_state]
 }
 
 proc main {} {
-    # 1432 is too low.
     set input [read stdin]
     set maze [parse_maze $input]
     set graph [maze_to_graph $maze]
@@ -331,7 +330,8 @@ proc main {} {
     puts "The solution to part 2 is $soln2."
     
 
-    # if {$soln1 != 604} {error "The solution to part 1 should be 604."}
+    if {$soln1 != 604} {error "The solution to part 1 should be 604."}
+    if {$soln2 != 7166} {error "The solution to part 2 should be 7166."}
 
 }
 
