@@ -212,6 +212,8 @@ proc run_computer {intcode} {
     $computer run
 }
 
+################################## End Intcode ################################
+
 proc format_command {s} {
     set ascii [lmap c [split $s {}] {scan $c %c}]
     lappend ascii 10
@@ -255,21 +257,25 @@ proc run_to_yield {computer_name current} {
     return [list 1 $current [join $output ""]]
 }
 
-proc run_springscript {intcode springscript all_commands {verbose 0}} {
-    set ss_pointer [expr {[llength $springscript] - 1}]
+# proc run_springscript {intcode springscript all_commands {verbose 0}} {
+proc run_springscript {intcode springscript {verbose 0}} {
+    # set ss_pointer [expr {[llength $springscript] - 1}]
+    set ss_pointer 0
 
     # Run intcode computer until it is ready for input.
     if {$verbose > 1} {puts "Running intcode VM ..."}
     set current [decode_output [coroutine compute run_computer $intcode]]
     lassign [run_to_yield compute $current] ok current output
     while {$ok} {
-        # puts $output
+        if {$verbose > 1} {puts $output}
 
         # Convert springscript instruction to ascii
-        set command [lindex $all_commands [lindex $springscript $ss_pointer]]
+        # set command [lindex $all_commands [lindex $springscript $ss_pointer]]
+        set command [lindex $springscript $ss_pointer]
         set ascii [format_command $command]
         if {$verbose > 1} {puts "Entering $command as $ascii"}
-        incr ss_pointer -1
+        # incr ss_pointer -1
+        incr ss_pointer
 
         # Input instruction in ascii up to the penultimate code
         for {set i 0} {$i < [expr {[llength $ascii] - 1}]} {incr i} {
@@ -317,7 +323,7 @@ proc build_all_commands_list {} {
     return $commands
 }
 
-proc solve {intcode} {
+proc solve_z {intcode} {
     set all_commands [build_all_commands_list]
     lappend all_commands "WALK"
 
@@ -353,6 +359,13 @@ proc solve {intcode} {
         }
     }
 }
+
+proc solve {intcode} {
+    set ss [read_springscript]
+    puts "Running $ss"
+    run_springscript $intcode $ss 3
+}
+
 proc main {} {
     set input [string trim [read stdin]]
     set intcode [split $input ","]
