@@ -1,7 +1,7 @@
 # Advent of Code 2019 :: Day 21 :: Springdroid Adventure
 # https://adventofcode.com/2019/day/21
 
-package require struct::prioqueue
+package require struct::queue
 
 oo::class create IntcodeComputer {
     variable intcode instruction_pointer memory relative_base
@@ -323,44 +323,30 @@ proc build_all_commands_list {} {
     return $commands
 }
 
-proc solve_z {intcode} {
+proc solve {intcode} {
     set all_commands [build_all_commands_list]
     lappend all_commands "WALK"
 
-    set ss [list [list 30] 1]
-    set dist [run_springscript $intcode $ss $all_commands]
-    set priority [expr {-1 * ((100 * $dist) + 1)}]
+    set ss [list 30]
 
-    set queue [::struct::prioqueue]
-    $queue put $ss $priority
+    set queue [::struct::queue]
+    $queue put $ss
 
     while {[$queue size] > 0} {
-        lassign [$queue get] parent length
-        if {$length > 1} {
-            break
+        set ss [$queue get] ss
+        set result [run_springscript $intcode $ss $all_commands 0]
+        if {$result < 0} {
+            return $ss
         }
-        incr length
         for {set i 0} {$i < 30} {incr i} {
-            set child $parent
-            lappend child $i
-            puts "running $child"
-            set dist [run_springscript $intcode $child $all_commands 1]
-            puts "$child made it $dist"
-            if {$dist >= 0} {
-                set state [list $child $length]
-                # set priority [expr {-1 * ((100 * $dist) + $length)}]
-                # set priority [expr {-1 * ((10000 * $length) + $dist)}]
-                # puts "enqueueing $state as $priority"
-                set priority [expr {-1 * $dist}]
-                $queue put $state $dist
-            } else {
-                return 1
-            }
+            set ss0 $parent
+            lappend ss0 $i
+            $queue put $ss0
         }
     }
 }
 
-proc solve {intcode} {
+proc solve_z {intcode} {
     set ss [read_springscript]
     puts "Running $ss"
     run_springscript $intcode $ss 3
