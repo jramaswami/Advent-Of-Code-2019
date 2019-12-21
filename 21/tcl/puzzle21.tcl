@@ -2,6 +2,7 @@
 # https://adventofcode.com/2019/day/21
 
 package require struct::queue
+package require struct::stack
 
 oo::class create IntcodeComputer {
     variable intcode instruction_pointer memory relative_base
@@ -322,12 +323,15 @@ proc solve {intcode} {
 
     set ss [list [list 30] 1]
 
-    set queue [::struct::queue]
-    $queue put $ss 
+    set queue [::struct::stack]
+    $queue push $ss 
 
     while {[$queue size] > 0} {
-        set script [$queue get]
-        puts $script
+        set script [$queue pop]
+        if {[llength $script] > 15} {
+            continue
+        }
+        # puts $script
         # set result [run_springscript $intcode $script $all_commands]
         set result 1
         if {$result < 0} {
@@ -337,7 +341,7 @@ proc solve {intcode} {
         for {set i 0} {$i < 30} {incr i} {
             set script0 $script
             lappend script0 $i
-            $queue put $script0
+            $queue push $script0
         }
     }
 }
