@@ -212,8 +212,6 @@ proc run_computer {intcode} {
     $computer run
 }
 
-################################## End Intcode ################################
-
 proc format_command {s} {
     set ascii [lmap c [split $s {}] {scan $c %c}]
     lappend ascii 10
@@ -257,25 +255,21 @@ proc run_to_yield {computer_name current} {
     return [list 1 $current [join $output ""]]
 }
 
-# proc run_springscript {intcode springscript all_commands {verbose 0}} {
-proc run_springscript {intcode springscript {verbose 0}} {
-    # set ss_pointer [expr {[llength $springscript] - 1}]
-    set ss_pointer 0
+proc run_springscript {intcode springscript all_commands {verbose 0}} {
+    set ss_pointer [expr {[llength $springscript] - 1}]
 
     # Run intcode computer until it is ready for input.
     if {$verbose > 1} {puts "Running intcode VM ..."}
     set current [decode_output [coroutine compute run_computer $intcode]]
     lassign [run_to_yield compute $current] ok current output
     while {$ok} {
-        if {$verbose > 1} {puts $output}
+        # puts $output
 
         # Convert springscript instruction to ascii
-        # set command [lindex $all_commands [lindex $springscript $ss_pointer]]
-        set command [lindex $springscript $ss_pointer]
+        set command [lindex $all_commands [lindex $springscript $ss_pointer]]
         set ascii [format_command $command]
         if {$verbose > 1} {puts "Entering $command as $ascii"}
-        # incr ss_pointer -1
-        incr ss_pointer
+        incr ss_pointer -1
 
         # Input instruction in ascii up to the penultimate code
         for {set i 0} {$i < [expr {[llength $ascii] - 1}]} {incr i} {
@@ -295,8 +289,7 @@ proc run_springscript {intcode springscript {verbose 0}} {
         if {!$ok} {
             if {[string first "Didn't make it across" $output] >= 0} {
                 if {$verbose > 0} {puts $output}
-                set last_line [lindex [split $output "\n"] end-2]
-                return [string first @ $last_line]
+                return 1
             } else {
                 puts "WINNER $output"
                 return -1
@@ -327,29 +320,26 @@ proc solve {intcode} {
     set all_commands [build_all_commands_list]
     lappend all_commands "WALK"
 
-    set ss [list 30]
+    set ss [list [list 30] 1]
 
     set queue [::struct::queue]
-    $queue put $ss
+    $queue put $ss 
 
     while {[$queue size] > 0} {
-        set ss [$queue get] ss
-        set result [run_springscript $intcode $ss $all_commands 0]
+        set script [$queue get]
+        puts $script
+        # set result [run_springscript $intcode $script $all_commands]
+        set result 1
         if {$result < 0} {
-            return $ss
+            puts $script
+            break
         }
         for {set i 0} {$i < 30} {incr i} {
-            set ss0 $parent
-            lappend ss0 $i
-            $queue put $ss0
+            set script0 $script
+            lappend script0 $i
+            $queue put $script0
         }
     }
-}
-
-proc solve_z {intcode} {
-    set ss [read_springscript]
-    puts "Running $ss"
-    run_springscript $intcode $ss 3
 }
 
 proc main {} {
