@@ -1,59 +1,80 @@
 # Advent of Code 2019 :: Day 21 :: Slam Shuffle
 # https://adventofcode.com/2019/day/22
 
-package require struct::list
-
 proc init_deck {n} {
-    set ::deck [::struct::list iota $n]
+    set ::deck_length $n
 }
 
-# From https://wiki.tcl-lang.org/page/lrotate (lrotate6)
-proc lrotate {xs {n 1}} {
-    if {$n == 0 || [llength $xs] == 0 } {return $xs}
-    set n [expr {$n % [llength $xs]}]
-    return [concat [lrange $xs $n end] [lrange $xs 0 [expr {$n-1}]]]
+proc keep {card} {
+    set ::keep $card
 }
 
 proc deal {a b c} {
     if {$a == "with"} {
-        set index 0
-        set limit [llength $::deck]
-        set new_deck [lrepeat $limit x]
-        for {set card 0} {$card < $limit} {incr card} {
-            set card_value [lindex $::deck $card]
-            lset new_deck $index $card_value
-            set index [expr {($index + $c) % $limit}]
-        }
-        set ::deck $new_deck
+        # Deal with increment
+        set ::keep [expr {($::keep * $c) % $::deck_length}]
     } elseif {$a == "into"} {
-        set ::deck [lreverse $::deck]
+        # Deal into new stack
+        set ::keep [expr {$::deck_length - $::keep - 1}]
     }
 }
 
 proc cut {n} {
-    set ::deck [lrotate $::deck $n]
-}
-
-proc Result: {args} {
-    if {$::deck != $args} {
-        error "$::deck != $args"
-    } else {
-        puts "* ok!"
+    if {$n > 0} {
+        if {$::keep < $n} {
+            set ::keep [expr {$::keep + $::deck_length - $n}]
+        } else {
+            set ::keep [expr {$::keep - $n}]
+        }
+    } elseif {$n < 0} {
+        set p [expr {$::deck_length + $n}]
+        if {$::keep < $p} {
+            set ::keep [expr {$::keep - $n}]
+        } else {
+            set ::keep [expr {$::keep - $p}]
+        }
     }
 }
 
-proc solve {lines} {
+proc solve_part1 {lines} {
+    init_deck 10007
+    keep 2019
     foreach line $lines {
-        puts $line
         eval $line
     }
-    return [lsearch $::deck 2019]
+    return $::keep
+}
+
+proc solve_part2 {lines} {
+
+    # 70633553514591 is too high
+    init_deck 119315717514047
+    set keep_card 2020
+    set shuffles 101741582076661
+
+    init_deck 10007
+    set keep_card 2019
+
+    keep $keep_card
+    for {set t 1} {$t <= $shuffles} {incr t} {
+        foreach line $lines {
+            eval $line
+        }
+        puts "$keep_card $::keep"
+        if {$::keep == $keep_card} {
+            puts "$keep_card repeat at $t"
+            break
+        }
+    }
+    return $::keep
 }
 
 proc main {} {
     set lines [split [string trim [read stdin]] "\n"]
-    set soln1 [solve $lines]
+    set soln1 [solve_part1 $lines]
     puts "The solution to part 1 is $soln1."
+    set soln2 [solve_part2 $lines]
+    puts "The solution to part2 is $soln2."
 }
 
 if {$::argv0 == [info script]} {
