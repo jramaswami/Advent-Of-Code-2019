@@ -220,9 +220,9 @@ proc format_command {s} {
     return $ascii
 }
 
-proc read_springscript {} {
+proc read_springscript {filename} {
     set springscript {}
-    set soln_file [open "solution.ss" r]
+    set soln_file [open $filename r]
     foreach line [split [string trim [read $soln_file]] "\n"] {
         set comment_index [string first ";" $line]
         if {$comment_index >= 0} {
@@ -292,7 +292,6 @@ proc run_springscript {intcode springscript {verbose 0}} {
         if {!$ok} {
             if {[string first "Didn't make it across" $output] >= 0} {
                 if {$verbose > 0} {puts $output}
-                set last_line [lindex [split $output "\n"] end-2]
                 return -1
             } else {
                 return [lindex [split $output "\n"] end]
@@ -307,12 +306,19 @@ proc solve_part1 {intcode} {
     return [run_springscript $intcode $ss 0]
 }
 
+proc solve_part2 {intcode} {
+    set ss {{OR A J} {AND B J} {AND C J} {NOT J J} {AND D J} {OR E T} {OR H T} {AND T J} {RUN}}
+    return [run_springscript $intcode $ss 0]
+}
+
 proc main {} {
     set input [string trim [read stdin]]
     set intcode [split $input ","]
     set soln1 [solve_part1 $intcode]
     puts "The solution to part 1 is $soln1."
     if {$soln1 != 19355364} {error "The solution to part 1 should be 19355364."}
+    set soln2 [solve_part2 $intcode]
+    puts "The solution to part 2 is $soln2."
 }
 
 if {$::argv0 == [info script]} {
