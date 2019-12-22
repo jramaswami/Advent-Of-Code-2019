@@ -27,16 +27,16 @@ proc deal {a b c deck_length_var keep_var {reverse 0}} {
     upvar $keep_var keep
     if {$a == "with"} {
         # Deal with increment
-        # increment * index (mod deck length)
         if {$reverse} {
             set s [expr {[modInv $c $deck_length]}]
             set keep [expr {($keep * $s) % $deck_length}]
         } else {
+            # increment * index (mod deck length)
             set keep [expr {($keep * $c)}]
         }
     } elseif {$a == "into"} {
         # Deal into new stack
-        # deck length - 1 - index
+        # deck length - 1 - index (mod deck length)
         set keep [expr {$deck_length - $keep - 1}]
     }
 }
@@ -46,21 +46,9 @@ proc cut {n deck_length_var keep_var {reverse 0}} {
     upvar $keep_var keep
     if {$reverse} {
         set n [expr {-1 * $n}]
-    }
-    # index - n
-    if {$n > 0} {
-        if {$keep < $n} {
-            set keep [expr {$keep + $deck_length - $n}]
-        } else {
-            set keep [expr {$keep - $n}]
-        }
-    } elseif {$n < 0} {
-        set p [expr {$deck_length + $n}]
-        if {$keep < $p} {
-            set keep [expr {$keep - $n}]
-        } else {
-            set keep [expr {$keep - $p}]
-        }
+    } else {
+        # index - n (mod deck length)
+        set keep [expr {$keep - $n}]
     }
 }
 
@@ -72,7 +60,7 @@ proc solve_part1 {lines} {
         set line [concat $line {deck_length keep}]
         eval $line
     }
-    return $keep
+    return [expr {$keep % $deck_length}]
 }
 
 proc verify_reversal {lines} {
@@ -132,11 +120,11 @@ proc solve_part2 {lines} {
 
 proc main {} {
     set lines [split [string trim [read stdin]] "\n"]
-    # set soln1 [solve_part1 $lines]
-    # puts "The solution to part 1 is $soln1."
+    set soln1 [solve_part1 $lines]
+    puts "The solution to part 1 is $soln1."
     # verify_reversal $lines
-    set soln2 [solve_part2 $lines]
-    puts "The solution to part2 is $soln2."
+    # set soln2 [solve_part2 $lines]
+    # puts "The solution to part2 is $soln2."
 }
 
 if {$::argv0 == [info script]} {
