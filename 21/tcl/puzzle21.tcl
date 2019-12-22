@@ -1,8 +1,7 @@
 # Advent of Code 2019 :: Day 21 :: Springdroid Adventure
 # https://adventofcode.com/2019/day/21
 
-package require struct::queue
-package require struct::stack
+package require struct::prioqueue
 
 oo::class create IntcodeComputer {
     variable intcode instruction_pointer memory relative_base
@@ -213,6 +212,8 @@ proc run_computer {intcode} {
     $computer run
 }
 
+################################## End Intcode ################################
+
 proc format_command {s} {
     set ascii [lmap c [split $s {}] {scan $c %c}]
     lappend ascii 10
@@ -256,21 +257,22 @@ proc run_to_yield {computer_name current} {
     return [list 1 $current [join $output ""]]
 }
 
-proc run_springscript {intcode springscript all_commands {verbose 0}} {
-    set ss_pointer [expr {[llength $springscript] - 1}]
+proc run_springscript {intcode springscript {verbose 0}} {
+    set ss_pointer 0
 
     # Run intcode computer until it is ready for input.
     if {$verbose > 1} {puts "Running intcode VM ..."}
     set current [decode_output [coroutine compute run_computer $intcode]]
     lassign [run_to_yield compute $current] ok current output
     while {$ok} {
-        # puts $output
+        if {$verbose > 1} {puts $output}
 
         # Convert springscript instruction to ascii
-        set command [lindex $all_commands [lindex $springscript $ss_pointer]]
+        # set command [lindex $all_commands [lindex $springscript $ss_pointer]]
+        set command [lindex $springscript $ss_pointer]
         set ascii [format_command $command]
         if {$verbose > 1} {puts "Entering $command as $ascii"}
-        incr ss_pointer -1
+        incr ss_pointer
 
         # Input instruction in ascii up to the penultimate code
         for {set i 0} {$i < [expr {[llength $ascii] - 1}]} {incr i} {
@@ -290,66 +292,27 @@ proc run_springscript {intcode springscript all_commands {verbose 0}} {
         if {!$ok} {
             if {[string first "Didn't make it across" $output] >= 0} {
                 if {$verbose > 0} {puts $output}
-                return 1
-            } else {
-                puts "WINNER $output"
+                set last_line [lindex [split $output "\n"] end-2]
                 return -1
+            } else {
+                return [lindex [split $output "\n"] end]
             }
         }
         # puts $output
     }
 }
 
-proc build_all_commands_list {} {
-    set commands {}
-    set ops {NOT AND OR}
-    set readable {A B C D T J}
-    set writeable {T J} 
-    foreach op $ops {
-        foreach rd $readable {
-            foreach wr $writeable {
-                if {$rd != $wr} {
-                    lappend commands "$op $rd $wr"
-                }
-            }
-        }
-    }
-    return $commands
-}
-
-proc solve {intcode} {
-    set all_commands [build_all_commands_list]
-    lappend all_commands "WALK"
-
-    set ss [list [list 30] 1]
-
-    set queue [::struct::stack]
-    $queue push $ss 
-
-    while {[$queue size] > 0} {
-        set script [$queue pop]
-        if {[llength $script] > 15} {
-            continue
-        }
-        # puts $script
-        # set result [run_springscript $intcode $script $all_commands]
-        set result 1
-        if {$result < 0} {
-            puts $script
-            break
-        }
-        for {set i 0} {$i < 30} {incr i} {
-            set script0 $script
-            lappend script0 $i
-            $queue push $script0
-        }
-    }
+proc solve_part1 {intcode} {
+    set ss {{OR A T} {AND B T} {AND C T} {NOT T J} {AND D J} {WALK}}
+    return [run_springscript $intcode $ss 0]
 }
 
 proc main {} {
     set input [string trim [read stdin]]
     set intcode [split $input ","]
-    solve $intcode
+    set soln1 [solve_part1 $intcode]
+    puts "The solution to part 1 is $soln1."
+    if {$soln1 != 19355364} {error "The solution to part 1 should be 19355364."}
 }
 
 if {$::argv0 == [info script]} {
