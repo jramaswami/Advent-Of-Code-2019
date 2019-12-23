@@ -243,9 +243,13 @@ proc solve_part1 {intcode} {
         puts "$net_addr $current"
     }
 
-    for {set t 0} {$t < 10} {incr t} {
+    for {set t 0} {$t < 100} {incr t} {
         puts "Tick $t"
         for {set net_addr 0} {$net_addr < 50} {incr net_addr} {
+            # Computer should always be waiting so current will be ?
+            set current "?"
+            puts "Computer $net_addr has the conn ..."
+            # If there is anything in the input queue, put it in ...
             set queue [dict get $packets $net_addr]
             if {$queue == {}} {
                 set current [computer${net_addr} -1]
@@ -253,12 +257,12 @@ proc solve_part1 {intcode} {
                 foreach packet $queue {
                     lassign $packet x y
                     # Input this packet
-                    puts "Sending packet $x $y to $net_addr ..."
                     set current [computer${net_addr} $x]
                     set current [computer${net_addr} $y]
                 }
                 dict set packets $net_addr {}
             }
+            # Run until I get I am waiting for input ...
             lassign [run_to_yield computer${net_addr} $current] ok current output
             if {$output != {}} {
                 puts "$net_addr > $output"
@@ -266,19 +270,26 @@ proc solve_part1 {intcode} {
                     set addr [lindex $output $i]
                     set x [lindex $output [expr {$i + 1}]]
                     set y [lindex $output [expr {$i + 2}]]
+                    dict lappend packets $addr [list $x $y]
                 }
             }
-            set current [computer${net_addr} $net_addr]
+            if {$current != "?"} {
+                puts "$net_addr should be out of output but I am not waiting for input ..."
+            }
         }
-        puts $packets
     }
+    puts $packets
+    lassign [lindex [dict get $packets 255] 0] x y
+    return $y
 }
 
 proc main {} {
     set input [string trim [read stdin]]
     set intcode [split $input ","]
     set soln1 [solve_part1 $intcode]
+    puts "The solution to part 1 is $soln1."
 }
+
 
 if {$::argv0 == [info script]} {
     main
