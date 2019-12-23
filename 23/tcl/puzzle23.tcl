@@ -229,26 +229,26 @@ package require struct::queue
 proc solve_part1 {intcode} {
     set packets [dict create]
     for {set net_addr 0} {$net_addr < 50} {incr net_addr} {
-        puts "Spinning up computer $net_addr ..."
+        # puts "Spinning up computer $net_addr ..."
         set current [coroutine computer${net_addr} run_computer $intcode]
         dict set packets $net_addr {}
 
     }
 
-    puts "Entering network addresses ..."
+    # puts "Entering network addresses ..."
     for {set net_addr 0} {$net_addr < 50} {incr net_addr} {
-        puts "Entering network address for computer $net_addr ..."
+        # puts "Entering network address for computer $net_addr ..."
         lassign [run_to_yield computer${net_addr} $current] ok current output
         set current [computer${net_addr} $net_addr]
-        puts "$net_addr $current"
+        # puts "$net_addr $current"
     }
 
-    for {set t 0} {$t < 100} {incr t} {
+    for {set t 0} {$t < 10} {incr t} {
         puts "Tick $t"
         for {set net_addr 0} {$net_addr < 50} {incr net_addr} {
             # Computer should always be waiting so current will be ?
             set current "?"
-            puts "Computer $net_addr has the conn ..."
+            # puts "Computer $net_addr has the conn ..."
             # If there is anything in the input queue, put it in ...
             set queue [dict get $packets $net_addr]
             if {$queue == {}} {
@@ -265,29 +265,146 @@ proc solve_part1 {intcode} {
             # Run until I get I am waiting for input ...
             lassign [run_to_yield computer${net_addr} $current] ok current output
             if {$output != {}} {
-                puts "$net_addr > $output"
+                # puts "$net_addr > $output"
                 for {set i 0} {$i < [llength $output]} {incr i 3} {
                     set addr [lindex $output $i]
                     set x [lindex $output [expr {$i + 1}]]
                     set y [lindex $output [expr {$i + 2}]]
+                    puts "Sending $x $y to $addr"
                     dict lappend packets $addr [list $x $y]
                 }
             }
             if {$current != "?"} {
-                puts "$net_addr should be out of output but I am not waiting for input ..."
+                # puts "$net_addr should be out of output but I am not waiting for input ..."
             }
         }
     }
-    puts $packets
+    # puts $packets
     lassign [lindex [dict get $packets 255] 0] x y
+    return $y
+}
+
+proc network_idle {packets} {
+    dict for {addr queue} $packets {
+        if {[llength $queue] > 0} {
+            return 0
+        }
+    }
+    return 1
+}
+
+proc solve_part2 {intcode} {
+    set NAT {}
+    set NAT_packets_sent [dict create]
+    set packets [dict create]
+    for {set net_addr 0} {$net_addr < 50} {incr net_addr} {
+        # puts "Spinning up computer $net_addr ..."
+        set current [coroutine computer${net_addr} run_computer $intcode]
+        dict set packets $net_addr {}
+
+    }
+
+    # puts "Entering network addresses ..."
+    for {set net_addr 0} {$net_addr < 50} {incr net_addr} {
+        # puts "Entering network address for computer $net_addr ..."
+        lassign [run_to_yield computer${net_addr} $current] ok current output
+        set current [computer${net_addr} $net_addr]
+        # puts "$net_addr $current"
+    }
+
+    set t 1
+    while {1} {
+        puts "Tick $t"
+        incr t
+        set packets_sent 0
+        for {set net_addr 0} {$net_addr < 50} {incr net_addr} {
+            # Computer should always be waiting so current will be ?
+            set current "?"
+            # puts "Computer $net_addr has the conn ..."
+            # If there is anything in the input queue, put it in ...
+            set queue [dict get $packets $net_addr]
+            if {$queue == {}} {
+                set current [computer${net_addr} -1]
+                puts "$net_addr > -1 ($current)"
+                # Run until I get I am waiting for input ...
+                lassign [run_to_yield computer${net_addr} $current] ok current output
+                if {$output != {}} {
+                    puts "$net_addr > $output ($current) [llength $output]"
+                    for {set i 0} {$i < [llength $output]} {incr i 3} {
+                        set addr [lindex $output $i]
+                        set x [lindex $output [expr {$i + 1}]]
+                        set y [lindex $output [expr {$i + 2}]]
+                        if {$addr >= 0 && $addr < 50} {
+                            incr packets_sent
+                            puts "$net_addr sending x $x y $y to $addr"
+                            dict lappend packets $addr [list $x $y]
+                        } elseif {$addr == 255} {
+                            puts "Sending NAT ($addr) packet $x $y"
+                            set NAT [list $x $y]
+                        } else {
+                            puts "$net_addr sending bad packet: $x $y to $addr"
+                        }
+                    }
+                }
+            } else {
+                foreach packet $queue {
+                    lassign $packet x y
+                    # Input this packet
+                    set current [computer${net_addr} $x]
+                    set current [computer${net_addr} $y]
+                    puts "$net_addr > $x $y ($current)"
+                    # Run until I get I am waiting for input ...
+                    lassign [run_to_yield computer${net_addr} $current] ok current output
+                    if {$output != {}} {
+                        puts "$net_addr > $output ($current) [llength $output]"
+                        for {set i 0} {$i < [llength $output]} {incr i 3} {
+                            set addr [lindex $output $i]
+                            set x [lindex $output [expr {$i + 1}]]
+                            set y [lindex $output [expr {$i + 2}]]
+                            if {$addr >= 0 && $addr < 50} {
+                                incr packets_sent
+                                puts "$net_addr sending x $x y $y to $addr"
+                                dict lappend packets $addr [list $x $y]
+                            } elseif {$addr == 255} {
+                                puts "Sending NAT ($addr) packet $x $y"
+                                set NAT [list $x $y]
+                            } else {
+                                puts "$net_addr sending bad packet: $x $y to $addr"
+                            }
+                        }
+                    }
+                }
+                dict set packets $net_addr {}
+            }
+
+            if {$current != "?"} {
+                puts "$net_addr should be out of output but I am not waiting for input ..."
+            }
+        }
+
+        puts "packets sent $packets_sent"
+        if {$packets_sent < 1} {
+            lassign $NAT x y
+            if {[dict exists $NAT_packets_sent $y]} {
+                puts "We've already seen y value $y from $NAT in $NAT_packets_sent"
+                return $y
+            }
+            puts "NAT Sending $NAT to 0 ..."
+            dict set NAT_packets_sent $y $NAT
+            dict lappend packets 0 $NAT
+        }
+    }
+    lassign $NAT x y
     return $y
 }
 
 proc main {} {
     set input [string trim [read stdin]]
     set intcode [split $input ","]
-    set soln1 [solve_part1 $intcode]
-    puts "The solution to part 1 is $soln1."
+    # set soln1 [solve_part1 $intcode]
+    # puts "The solution to part 1 is $soln1."
+    set soln2 [solve_part2 $intcode]
+    puts "The solution to part 2 is $soln2."
 }
 
 
